@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EduPlus — Teacher Dashboard | AIML Department</title>
+  <meta name="description" content="EduPlus Teacher Dashboard — View your timetable, submit requests and queries." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="src/css/style.css" />
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" role="navigation" aria-label="Teacher navigation">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon" aria-hidden="true">E+</div>
+      <div class="sidebar-logo-text">
+        <div class="sidebar-logo-name">EduPlus</div>
+        <div class="sidebar-logo-sub">AI Timetable Maker</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">My Schedule</div>
+      <div class="nav-item active" id="nav-my-timetable" onclick="showPanel('my-timetable')" role="button" tabindex="0">
+        <span class="nav-item-icon">📅</span> My Timetable
+      </div>
+      <div class="nav-item" id="nav-today" onclick="showPanel('today')" role="button" tabindex="0">
+        <span class="nav-item-icon">🗓</span> Today's Classes
+      </div>
+
+      <div class="nav-section-label">Requests</div>
+      <div class="nav-item" id="nav-submit-request" onclick="showPanel('submit-request')" role="button" tabindex="0">
+        <span class="nav-item-icon">✉</span> Submit Request
+      </div>
+      <div class="nav-item" id="nav-my-requests" onclick="showPanel('my-requests')" role="button" tabindex="0">
+        <span class="nav-item-icon">📋</span> My Requests
+      </div>
+
+      <div class="nav-section-label">Support</div>
+      <div class="nav-item" id="nav-teacher-query" onclick="showPanel('teacher-query')" role="button" tabindex="0">
+        <span class="nav-item-icon">❓</span> Submit Query
+      </div>
+      <div class="nav-item" id="nav-notifications" onclick="showPanel('notifications')" role="button" tabindex="0">
+        <span class="nav-item-icon">🔔</span> Notifications
+        <span class="nav-item-badge">1</span>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-avatar" id="sidebar-avatar" aria-hidden="true">AM</div>
+        <div>
+          <div class="sidebar-user-name" id="sidebar-username">Prof. Arjun Mehta</div>
+          <div class="sidebar-user-role">Teacher · AIML</div>
+        </div>
+      </div>
+      <button class="sidebar-signout" onclick="signOut()" aria-label="Sign out">↩ Sign out</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <div class="main-content">
+    <header class="topbar" role="banner">
+      <div>
+        <div class="topbar-title" id="topbar-title">My Timetable</div>
+        <div class="topbar-subtitle">AIML Department · Example Engineering College</div>
+      </div>
+      <div class="topbar-actions">
+        <span class="badge badge-mock">⚠ Prototype Demo</span>
+        <span class="badge badge-brand">Assistant Professor</span>
+      </div>
+    </header>
+
+    <div class="page-content">
+
+      <!-- Prototype banner -->
+      <div class="proto-banner" role="note">
+        <span style="font-size:18px">⚠️</span>
+        <div>
+          <strong>Prototype Demo:</strong> Timetable data is pre-generated mock data. Request submissions update local state only.
+          Query processing via ML models is planned for a future phase.
+        </div>
+      </div>
+
+      <!-- ══ PANEL: MY TIMETABLE ══ -->
+      <section id="panel-my-timetable" class="panel active" aria-label="My weekly timetable">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title">My Weekly Timetable</h1>
+            <p class="section-desc">Sessions assigned to Prof. Arjun Mehta (TCH005)</p>
+          </div>
+          <span class="badge badge-mock">Mock Data</span>
+        </div>
+
+        <!-- Next class highlight -->
+        <div class="next-class-card" style="margin-bottom: var(--sp-5);" role="complementary" aria-label="Next class">
+          <div class="next-class-label">Next Class</div>
+          <div class="next-class-subject">ML Lab Practical — Batch B2</div>
+          <div class="next-class-details">
+            <span>📅 Wednesday, 14:00–16:00</span>
+            <span>🏛 AI/ML Lab 1 (LAB01)</span>
+            <span>👥 Year 3, Division A — Batch 2</span>
+          </div>
+          <div class="next-class-bg" aria-hidden="true">🧪</div>
+        </div>
+
+        <!-- Timetable filter -->
+        <div class="filter-bar">
+          <span class="filter-label">View:</span>
+          <button class="btn btn-primary btn-sm" id="view-all-btn" onclick="setTeacherView('all')">All Sessions</button>
+          <button class="btn btn-secondary btn-sm" id="view-labs-btn" onclick="setTeacherView('practical')">Labs Only</button>
+          <button class="btn btn-secondary btn-sm" id="view-lectures-btn" onclick="setTeacherView('lecture')">Lectures Only</button>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend" role="note">
+          <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Lab Practical (2h)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#e5e7eb"></div>No assigned session</div>
+        </div>
+
+        <!-- Teacher timetable grid -->
+        <div class="card" style="padding: var(--sp-4);">
+          <div class="tt-wrapper">
+            <div class="tt-grid" id="teacher-tt-grid" role="table" aria-label="Teacher weekly timetable grid">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-info" role="note" style="margin-top: var(--sp-4);">
+          <span class="alert-icon">ℹ</span>
+          <span>
+            Only sessions where <em>you</em> are the assigned teacher are highlighted.
+            Lunch (13:00–14:00) is reserved per Div 3A policy.
+            <strong>This timetable is mock data.</strong>
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: TODAY'S CLASSES ══ -->
+      <section id="panel-today" class="panel hidden" aria-label="Today's classes">
+        <div class="section-header">
+          <h1 class="section-title">Today's Classes</h1>
+        </div>
+
+        <!-- Date header -->
+        <div class="card" style="padding: var(--sp-4) var(--sp-6); margin-bottom: var(--sp-5); display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: var(--text-lg); font-weight: 700;" id="today-date-label">Wednesday, 21 October 2026</div>
+            <div class="text-muted text-sm">Showing Wednesday's schedule</div>
+          </div>
+          <span class="badge badge-brand">3 sessions today</span>
+        </div>
+
+        <!-- Announcements -->
+        <div class="announcement">
+          <span style="font-size: 16px;">📢</span>
+          <div>
+            <strong>Substitution Notice:</strong> Dr. Anita Desai has requested a substitute for Thursday's Mathematics lecture.
+            Status: <strong style="color: var(--success-500);">Approved</strong> — Prof. Swati Joshi will cover.
+          </div>
+        </div>
+
+        <!-- Today's session list -->
+        <div class="card" style="margin-top: var(--sp-4);">
+          <div class="card-header">
+            <div class="card-title">Session Schedule</div>
+          </div>
+          <div class="card-body" id="today-sessions-list">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: SUBMIT REQUEST ══ -->
+      <section id="panel-submit-request" class="panel hidden" aria-label="Submit scheduling request">
+        <div class="section-header">
+          <h1 class="section-title">Submit Request</h1>
+          <p class="section-desc">Reschedule, substitution, or cancellation request</p>
+        </div>
+
+        <div class="alert alert-warning" role="note" style="margin-bottom: var(--sp-5);">
+          <span class="alert-icon">⚠</span>
+          <div>
+            <strong>Simulated submission only.</strong> Request processing is not yet connected to the constraint engine.
+            Approved requests would normally trigger a repair operation. Your request will be added to local demo state.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <!-- Request form -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">New Request</div>
+            </div>
+            <div class="card-body">
+              <form id="request-form" novalidate>
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="req-type">Request Type</label>
+                  <select class="form-select" id="req-type" required aria-label="Request type">
+                    <option value="">Select type…</option>
+                    <option value="reschedule">Reschedule Session</option>
+                    <option value="substitution">Substitution Request</option>
+                    <option value="cancellation">Session Cancellation</option>
+                  </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="req-session">Affected Session</label>
+                  <select class="form-select" id="req-session" required aria-label="Affected session">
+                    <option value="">Select session…</option>
+                    <option value="ml-lab-b1">Mon 14:00 — ML Lab (Batch B1)</option>
+                    <option value="ml-lab-b2">Wed 14:00 — ML Lab (Batch B2)</option>
+                    <option value="ml-lab-b3">Thu 14:00 — ML Lab (Batch B3)</option>
+                  </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="req-reason">Reason / Details</label>
+                  <textarea class="form-textarea" id="req-reason" placeholder="Describe the reason for your request…" required aria-label="Request reason"></textarea>
+                  <div class="form-hint">Minimum 20 characters. Be specific about dates and preferred alternatives.</div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: var(--sp-4);" id="substitute-group">
+                  <label class="form-label" for="req-substitute">Suggested Substitute (optional)</label>
+                  <select class="form-select" id="req-substitute" aria-label="Suggested substitute teacher">
+                    <option value="">None — let admin decide</option>
+                    <option value="TCH001">Dr. Priya Sharma</option>
+                    <option value="TCH004">Dr. Sanjay Patel</option>
+                    <option value="TCH010">Prof. Deepa Krishnan</option>
+                  </select>
+                </div>
+
+                <div id="req-form-error" class="alert alert-error hidden" role="alert">
+                  <span class="alert-icon">✕</span>
+                  <span id="req-error-text">Please fill in all required fields.</span>
+                </div>
+
+                <button class="btn btn-primary w-full" type="submit" id="submit-req-btn">
+                  Submit Request
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Info panel -->
+          <div>
+            <div class="card" style="margin-bottom: var(--sp-4);">
+              <div class="card-header"><div class="card-title">How Requests Work</div></div>
+              <div class="card-body" style="font-size: var(--text-sm); color: var(--gray-600); line-height: 1.8;">
+                <ol style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px; list-style: decimal;">
+                  <li>You submit a request with the session and reason.</li>
+                  <li>The admin reviews the request in the inbox.</li>
+                  <li>If approved, the system runs a <strong>repair operation</strong> using the constraint solver.</li>
+                  <li>The solver finds the minimal change that satisfies all mandatory rules.</li>
+                  <li>A new timetable version is generated and published.</li>
+                  <li>You are notified of the outcome.</li>
+                </ol>
+                <div class="divider"></div>
+                <div class="alert alert-info" role="note">
+                  <span class="alert-icon">ℹ</span>
+                  <span>The repair solver is planned for a future phase. Step 3–5 are not yet implemented.</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">What You Can Request</div></div>
+              <div class="card-body">
+                <div style="display: flex; flex-direction: column; gap: 10px; font-size: var(--text-sm);">
+                  <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <span style="color: var(--brand-500); font-weight: 700; width: 100px; flex-shrink:0;">Reschedule</span>
+                    <span style="color: var(--gray-600);">Move a session to a different time. Admin and solver will find a compatible slot.</span>
+                  </div>
+                  <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <span style="color: var(--accent-500); font-weight: 700; width: 100px; flex-shrink:0;">Substitution</span>
+                    <span style="color: var(--gray-600);">Request another qualified teacher to cover your session.</span>
+                  </div>
+                  <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <span style="color: var(--error-500); font-weight: 700; width: 100px; flex-shrink:0;">Cancellation</span>
+                    <span style="color: var(--gray-600);">Cancel a session. Admin decides if a make-up is needed.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: MY REQUESTS ══ -->
+      <section id="panel-my-requests" class="panel hidden" aria-label="My submitted requests">
+        <div class="section-header">
+          <h1 class="section-title">My Requests</h1>
+          <p class="section-desc">Request history and status</p>
+        </div>
+        <div class="card" id="my-requests-card">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- ══ PANEL: SUBMIT QUERY ══ -->
+      <section id="panel-teacher-query" class="panel hidden" aria-label="Submit query">
+        <div class="section-header">
+          <h1 class="section-title">Submit Query</h1>
+        </div>
+
+        <div class="alert alert-warning" role="note" style="margin-bottom: var(--sp-5);">
+          <span class="alert-icon">⚠</span>
+          <div>
+            <strong>Query solving via ML model is planned for a future phase.</strong>
+            Your query will be logged. Automated answers are <strong>not yet available</strong>.
+            An administrator may respond manually. This feature demonstrates the intended query submission interface.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <div class="card">
+            <div class="card-header"><div class="card-title">New Query</div></div>
+            <div class="card-body">
+              <form id="teacher-query-form" novalidate>
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="tq-category">Query Category</label>
+                  <select class="form-select" id="tq-category" aria-label="Query category">
+                    <option value="">Select category…</option>
+                    <option value="timetable">Timetable Information</option>
+                    <option value="room">Room Availability</option>
+                    <option value="conflict">Conflict Explanation</option>
+                    <option value="workload">Workload Query</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="tq-text">Your Question</label>
+                  <textarea class="form-textarea" id="tq-text" placeholder="e.g. Which room is free on Thursday at 10am? …" aria-label="Query text"></textarea>
+                </div>
+                <div id="tq-success" class="hidden" style="margin-bottom: var(--sp-4);">
+                  <div class="alert alert-success" role="status">
+                    <span class="alert-icon">✓</span>
+                    <span>Query submitted. An administrator will respond. Automated ML responses are not yet available.</span>
+                  </div>
+                </div>
+                <button class="btn btn-primary w-full" type="submit" id="tq-submit-btn">Submit Query</button>
+              </form>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Future ML Query Service</div></div>
+            <div class="card-body" style="font-size: var(--text-sm); color: var(--gray-600); line-height: 1.8;">
+              <p style="margin-bottom: var(--sp-3);">In a future phase, this interface will route queries to dedicated problem-solving ML models. The planned routing:</p>
+              <ul style="list-style: disc; padding-left: 20px; display: flex; flex-direction: column; gap: 6px;">
+                <li><strong>Timetable lookups</strong> → Deterministic database query</li>
+                <li><strong>Slot/room availability</strong> → Constraint engine query</li>
+                <li><strong>Conflict explanations</strong> → Validator + explanation module</li>
+                <li><strong>Natural language</strong> → LLM parses intent → routes to service</li>
+                <li><strong>Complex scheduling</strong> → Problem-solving ML model</li>
+              </ul>
+              <div class="divider"></div>
+              <div class="alert alert-error" role="note">
+                <span class="alert-icon">⛔</span>
+                <span>The LLM gateway must not place sessions, validate timetables, or override scheduling constraints. These are performed exclusively by the CP-SAT solver and independent validator.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: NOTIFICATIONS ══ -->
+      <section id="panel-notifications" class="panel hidden" aria-label="Notifications">
+        <div class="section-header">
+          <h1 class="section-title">Notifications</h1>
+        </div>
+        <div class="card" id="notifications-card">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<script src="src/data/mockData.js"></script>
+<script src="src/js/teacher.js"></script>
+</body>
+</html>

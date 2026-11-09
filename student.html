@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EduPlus — Student Dashboard | AIML Department</title>
+  <meta name="description" content="EduPlus Student Dashboard — View your timetable, today's classes, and submit queries." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="src/css/style.css" />
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" role="navigation" aria-label="Student navigation">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon" aria-hidden="true">E+</div>
+      <div class="sidebar-logo-text">
+        <div class="sidebar-logo-name">EduPlus</div>
+        <div class="sidebar-logo-sub">AI Timetable Maker</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">My Schedule</div>
+      <div class="nav-item active" id="nav-student-home" onclick="showPanel('student-home')" role="button" tabindex="0">
+        <span class="nav-item-icon">⊞</span> Overview
+      </div>
+      <div class="nav-item" id="nav-student-timetable" onclick="showPanel('student-timetable')" role="button" tabindex="0">
+        <span class="nav-item-icon">📅</span> My Timetable
+      </div>
+      <div class="nav-item" id="nav-student-today" onclick="showPanel('student-today')" role="button" tabindex="0">
+        <span class="nav-item-icon">🗓</span> Today's Classes
+      </div>
+      <div class="nav-section-label">Notices</div>
+      <div class="nav-item" id="nav-student-notices" onclick="showPanel('student-notices')" role="button" tabindex="0">
+        <span class="nav-item-icon">📢</span> Notices
+        <span class="nav-item-badge">1</span>
+      </div>
+      <div class="nav-section-label">Support</div>
+      <div class="nav-item" id="nav-student-query" onclick="showPanel('student-query')" role="button" tabindex="0">
+        <span class="nav-item-icon">❓</span> Submit Query
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-avatar" id="sidebar-avatar" aria-hidden="true">SP</div>
+        <div>
+          <div class="sidebar-user-name" id="sidebar-username">Sneha Patel</div>
+          <div class="sidebar-user-role">Year 3 · Div A · Batch B1</div>
+        </div>
+      </div>
+      <button class="sidebar-signout" onclick="signOut()" aria-label="Sign out">↩ Sign out</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <div class="main-content">
+    <header class="topbar" role="banner">
+      <div>
+        <div class="topbar-title" id="topbar-title">Overview</div>
+        <div class="topbar-subtitle">AIML Department · Year 3, Division A, Batch B1</div>
+      </div>
+      <div class="topbar-actions">
+        <span class="badge badge-mock">⚠ Prototype Demo</span>
+        <span class="status-pill status-published"><span class="status-dot"></span> TT v1 Published</span>
+      </div>
+    </header>
+
+    <div class="page-content">
+
+      <!-- Prototype banner -->
+      <div class="proto-banner" role="note">
+        <span style="font-size:18px">⚠️</span>
+        <div>
+          <strong>Prototype Demo:</strong> Timetable is pre-generated mock data.
+          Query processing via ML model is planned for a future phase and is not yet connected.
+        </div>
+      </div>
+
+      <!-- ══ PANEL: STUDENT HOME / OVERVIEW ══ -->
+      <section id="panel-student-home" class="panel active" aria-label="Student overview">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title">My Schedule Overview</h1>
+            <p class="section-desc">Year 3 · Division A · Batch B1 · Semester 5</p>
+          </div>
+        </div>
+
+        <!-- Student identity card -->
+        <div class="card" style="margin-bottom: var(--sp-5); padding: var(--sp-5) var(--sp-6); display:flex; gap: var(--sp-5); align-items: center;">
+          <div style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-500), var(--accent-500)); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: white; flex-shrink: 0;" aria-hidden="true">SP</div>
+          <div>
+            <div style="font-size: var(--text-xl); font-weight: 800; color: var(--gray-900);">Sneha Patel</div>
+            <div style="font-size: var(--text-sm); color: var(--gray-500); margin-top: 4px;">
+              ID: STU2301045 &bull; AIML Department &bull; Example Engineering College
+            </div>
+            <div style="display:flex; gap: var(--sp-2); margin-top: var(--sp-2);">
+              <span class="badge badge-brand">Year 3</span>
+              <span class="badge badge-brand">Division A</span>
+              <span class="badge badge-info">Batch B1</span>
+              <span class="badge badge-neutral">Elective: Computer Vision</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-4" style="margin-bottom: var(--sp-6);">
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-blue" aria-hidden="true">📚</div>
+            <div>
+              <div class="stat-value">5</div>
+              <div class="stat-label">Subjects</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-green" aria-hidden="true">🧪</div>
+            <div>
+              <div class="stat-value">3</div>
+              <div class="stat-label">Lab Sessions/Week</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-purple" aria-hidden="true">⏱</div>
+            <div>
+              <div class="stat-value">28</div>
+              <div class="stat-label">Hours/Week</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-amber" aria-hidden="true">📢</div>
+            <div>
+              <div class="stat-value">1</div>
+              <div class="stat-label">Active Notice</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-content">
+          <!-- Next class -->
+          <div>
+            <div class="next-class-card" style="margin-bottom: var(--sp-5);" role="complementary" aria-label="Next class">
+              <div class="next-class-label">Next Class Today</div>
+              <div class="next-class-subject">ML Lab Practical</div>
+              <div class="next-class-details">
+                <span>⏱ 14:00–16:00 (starts in ~3h 30m)</span>
+                <span>🏛 AI/ML Lab 1 (LAB01)</span>
+                <span>👤 Prof. Arjun Mehta</span>
+                <span>👥 Batch B1 only</span>
+              </div>
+              <div class="next-class-bg" aria-hidden="true">🧪</div>
+            </div>
+
+            <!-- Today's sessions -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Today — Wednesday</div>
+                <span class="badge badge-brand">4 sessions</span>
+              </div>
+              <div class="card-body" id="student-home-today">
+                <!-- Populated by JS -->
+              </div>
+              <div class="card-footer">
+                <button class="btn btn-ghost btn-sm" onclick="showPanel('student-today')">View full schedule →</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subjects summary -->
+          <div>
+            <div class="card" style="margin-bottom: var(--sp-4);">
+              <div class="card-header">
+                <div class="card-title">My Subjects</div>
+                <span class="badge badge-mock">Mock</span>
+              </div>
+              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-3);">
+                <div id="student-subjects-list"><!-- Populated by JS --></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Quick Links</div>
+              </div>
+              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-2);">
+                <button class="btn btn-secondary w-full" onclick="showPanel('student-timetable')">📅 View Full Week Timetable</button>
+                <button class="btn btn-secondary w-full" onclick="showPanel('student-notices')">📢 View Notices (1 new)</button>
+                <button class="btn btn-secondary w-full" onclick="showPanel('student-query')">❓ Submit a Query</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: STUDENT TIMETABLE ══ -->
+      <section id="panel-student-timetable" class="panel hidden" aria-label="My weekly timetable">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title">My Weekly Timetable</h1>
+            <p class="section-desc">Published timetable — Year 3, Division A, Batch B1</p>
+          </div>
+          <div style="display:flex; gap: var(--sp-2);">
+            <span class="status-pill status-published"><span class="status-dot"></span> v1 Published</span>
+            <span class="badge badge-mock">Mock Data</span>
+          </div>
+        </div>
+
+        <div class="alert alert-info" role="note" style="margin-bottom: var(--sp-4);">
+          <span class="alert-icon">ℹ</span>
+          <span>
+            Sessions marked <span class="badge badge-info">Div A</span> are for your whole division.
+            Sessions marked <span class="badge badge-brand">B1</span> are for your batch only.
+            Sessions marked <span class="badge badge-neutral" style="background:#f3e8ff; color: #5b21b6;">CV</span> are for your Computer Vision elective group.
+          </span>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend" role="note">
+          <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Lecture</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>Tutorial</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Lab (Batch B1)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>Elective (CV)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#e5e7eb"></div>Lunch / Free</div>
+        </div>
+
+        <div class="card" style="padding: var(--sp-4);">
+          <div class="tt-wrapper">
+            <div class="tt-grid" id="student-tt-grid" role="table" aria-label="Student weekly timetable grid">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-info" role="note" style="margin-top: var(--sp-4);">
+          <span class="alert-icon">ℹ</span>
+          <span>
+            Only your batch (B1) lab sessions are highlighted. Other batches' labs may run simultaneously in other labs.
+            Lunch 13:00–14:00 is reserved for Division A per division lunch policy.
+            <strong>This timetable is mock data.</strong>
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: TODAY'S CLASSES (STUDENT) ══ -->
+      <section id="panel-student-today" class="panel hidden" aria-label="Today's classes">
+        <div class="section-header">
+          <h1 class="section-title">Today's Classes</h1>
+          <p class="section-desc">Wednesday, 21 October 2026</p>
+        </div>
+
+        <!-- Active notice -->
+        <div class="announcement announcement-cancelled" role="alert">
+          <span style="font-size:16px">❌</span>
+          <div>
+            <strong>Cancellation Notice:</strong> Dr. Sanjay Patel's Data Engineering Tutorial (Friday 14:00) has been cancelled.
+            No make-up session planned. Timetable version remains unchanged.
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: var(--sp-4);">
+          <div class="card-header">
+            <div class="card-title">Wednesday Schedule</div>
+            <span class="badge badge-brand">4 sessions</span>
+          </div>
+          <div class="card-body" id="student-today-list"><!-- Populated by JS --></div>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: NOTICES ══ -->
+      <section id="panel-student-notices" class="panel hidden" aria-label="Notices and cancellations">
+        <div class="section-header">
+          <h1 class="section-title">Notices &amp; Cancellations</h1>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Active Notices</div>
+            <span class="badge badge-warning">1 new</span>
+          </div>
+          <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-3);">
+            <div class="announcement announcement-cancelled" role="alert">
+              <span style="font-size:16px">❌</span>
+              <div>
+                <strong>Session Cancelled:</strong> Data Engineering Tutorial (SUB303) — Friday, 21 Nov 2026, 14:00–15:00.
+                <br /><em style="font-size: var(--text-xs);">Reason: Faculty departmental meeting. No make-up session required per HoD decision.</em>
+                <br /><span style="font-size: var(--text-xs); color: var(--gray-500);">Posted: 21 Oct 2026 at 07:45 by Dr. Sanjay Patel</span>
+              </div>
+            </div>
+            <div class="announcement" role="note">
+              <span style="font-size:16px">🔄</span>
+              <div>
+                <strong>Substitution Notice:</strong> Mathematics for AI (SUB304) — Thursday, 22 Oct 2026, 08:00–09:00.
+                <br />Dr. Anita Desai is absent. <strong>Prof. Swati Joshi</strong> will cover the session. Venue unchanged (Room 301).
+                <br /><span style="font-size: var(--text-xs); color: var(--gray-500);">Posted: 19 Oct 2026 at 16:30</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: var(--sp-4);">
+          <div class="card-header">
+            <div class="card-title">General Notices</div>
+          </div>
+          <div class="card-body">
+            <div style="padding: var(--sp-3) 0; border-bottom: 1px solid var(--gray-100);">
+              <div style="font-size: var(--text-sm); font-weight: 600; color: var(--gray-900);">Semester 5 Mid-Term Exam Schedule</div>
+              <div style="font-size: var(--text-xs); color: var(--gray-500); margin-top: 4px;">Exams will be held 10–14 Nov 2026. Timetable suspended during exam week. Details to follow.</div>
+              <div style="font-size: 10px; color: var(--gray-400); margin-top: 4px;">Posted: 15 Oct 2026</div>
+            </div>
+            <div style="padding: var(--sp-3) 0;">
+              <div style="font-size: var(--text-sm); font-weight: 600; color: var(--gray-900);">Lab Safety Induction — AI/ML Lab 1</div>
+              <div style="font-size: var(--text-xs); color: var(--gray-500); margin-top: 4px;">Mandatory safety induction for new Semester 5 batches before first lab session. Batch B1: 22 Oct 2026, 13:30.</div>
+              <div style="font-size: 10px; color: var(--gray-400); margin-top: 4px;">Posted: 18 Oct 2026</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-info" role="note" style="margin-top: var(--sp-4);">
+          <span class="alert-icon">ℹ</span>
+          <span>Only notices relevant to Year 3, Division A, Batch B1 are shown. Other batches or divisions may have different cancellations.</span>
+        </div>
+      </section>
+
+      <!-- ══ PANEL: SUBMIT QUERY ══ -->
+      <section id="panel-student-query" class="panel hidden" aria-label="Submit query">
+        <div class="section-header">
+          <h1 class="section-title">Submit a Query</h1>
+        </div>
+
+        <div class="alert alert-warning" role="note" style="margin-bottom: var(--sp-5);">
+          <span class="alert-icon">⚠</span>
+          <div>
+            <strong>Automated query solving is planned for a future phase.</strong>
+            Queries submitted here are not yet processed by an ML model.
+            An administrator may respond manually. This UI demonstrates the intended interface.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <!-- Query form -->
+          <div class="card">
+            <div class="card-header"><div class="card-title">New Query</div></div>
+            <div class="card-body">
+              <form id="student-query-form" novalidate>
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="sq-category">Query Category</label>
+                  <select class="form-select" id="sq-category" aria-label="Query category">
+                    <option value="">Select category…</option>
+                    <option value="next-class">When is my next class?</option>
+                    <option value="timetable-change">Why was a session moved?</option>
+                    <option value="cancellation">Cancellation details</option>
+                    <option value="elective">Elective group information</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: var(--sp-4);">
+                  <label class="form-label" for="sq-text">Your Question</label>
+                  <textarea class="form-textarea" id="sq-text" placeholder="e.g. Why was the Deep Learning lab moved from Wednesday to Tuesday this week?" aria-label="Query text"></textarea>
+                </div>
+                <div id="sq-success" class="hidden" style="margin-bottom: var(--sp-4);">
+                  <div class="alert alert-success" role="status">
+                    <span class="alert-icon">✓</span>
+                    <span>Query submitted. Automated ML responses are not yet available. An administrator may respond manually.</span>
+                  </div>
+                </div>
+                <div id="sq-history" style="margin-bottom: var(--sp-4);"></div>
+                <button class="btn btn-primary w-full" type="submit" id="sq-submit-btn">Submit Query</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Info sidebar -->
+          <div>
+            <div class="card" style="margin-bottom: var(--sp-4);">
+              <div class="card-header"><div class="card-title">What You Can Query</div></div>
+              <div class="card-body" style="font-size: var(--text-sm); color: var(--gray-600);">
+                <ul style="list-style: disc; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; line-height: 1.6;">
+                  <li>When is my next class or lab?</li>
+                  <li>Why was my timetable changed?</li>
+                  <li>Which room is my session in?</li>
+                  <li>Is my Friday tutorial cancelled?</li>
+                  <li>Which elective group am I in?</li>
+                  <li>What does my full week look like?</li>
+                </ul>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Future ML Query Roadmap</div></div>
+              <div class="card-body" style="font-size: var(--text-sm); color: var(--gray-600); line-height: 1.7;">
+                <p>In a future phase, student queries will be handled by dedicated problem-solving ML models, <strong>not a general-purpose LLM</strong>.</p>
+                <div class="divider"></div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <div style="display: flex; gap: 8px; align-items: flex-start;">
+                    <span style="color: var(--success-500); font-weight: 700; flex-shrink: 0;">Phase 4:</span>
+                    <span>Constraint-engine queries (room/slot availability)</span>
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: flex-start;">
+                    <span style="color: var(--brand-500); font-weight: 700; flex-shrink: 0;">Phase 5:</span>
+                    <span>ML model for complex scheduling questions and natural language</span>
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: flex-start;">
+                    <span style="color: var(--accent-500); font-weight: 700; flex-shrink: 0;">Phase 6:</span>
+                    <span>LLM intent parsing routed to appropriate backend service</span>
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="alert alert-error" role="note">
+                  <span class="alert-icon">⛔</span>
+                  <span style="font-size: var(--text-xs);">Student names will never be sent to an LLM. Only aggregate group-level data is used.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<script src="src/data/mockData.js"></script>
+<script src="src/js/student.js"></script>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EduPlus — AI Timetable Maker | Login</title>
+  <meta name="description" content="EduPlus AI Timetable Maker — Sign in to the college timetable management system for AIML Department." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="src/css/style.css" />
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<main class="login-page" role="main" id="login-page">
+  <!-- Background decorative shapes -->
+  <div class="login-bg-shape" style="width:500px;height:500px;top:-150px;left:-150px;"></div>
+  <div class="login-bg-shape" style="width:350px;height:350px;bottom:-100px;right:-80px;"></div>
+
+  <div class="login-card" role="dialog" aria-label="Sign in to EduPlus">
+    <!-- Card header -->
+    <div class="login-header">
+      <div class="login-logo" aria-hidden="true">E+</div>
+      <h1 class="login-title">EduPlus</h1>
+      <p class="login-subtitle">AI Timetable Maker &mdash; AIML Department</p>
+    </div>
+
+    <!-- Card body -->
+    <div class="login-body">
+      <!-- Prototype notice -->
+      <div class="login-proto-notice" role="note" aria-label="Prototype notice">
+        ⚠️ <strong>Prototype Demo Only.</strong> Authentication is mocked for demonstration purposes.
+        This system does not have production-level security.
+      </div>
+
+      <!-- Demo credential quick-fill -->
+      <div class="demo-creds" id="demo-creds-panel">
+        <div class="demo-creds-title">Demo Credentials — click to auto-fill</div>
+        <div class="demo-cred-row" id="fill-admin" role="button" tabindex="0" aria-label="Auto-fill Admin credentials" onclick="fillCredentials('admin@eduplus.demo','admin123')">
+          <span class="demo-cred-role">Admin</span>
+          <span class="demo-cred-email">admin@eduplus.demo</span>
+          <span class="demo-cred-pass">admin123</span>
+        </div>
+        <div class="demo-cred-row" id="fill-teacher" role="button" tabindex="0" aria-label="Auto-fill Teacher credentials" onclick="fillCredentials('teacher@eduplus.demo','teacher123')">
+          <span class="demo-cred-role">Teacher</span>
+          <span class="demo-cred-email">teacher@eduplus.demo</span>
+          <span class="demo-cred-pass">teacher123</span>
+        </div>
+        <div class="demo-cred-row" id="fill-student" role="button" tabindex="0" aria-label="Auto-fill Student credentials" onclick="fillCredentials('student@eduplus.demo','student123')">
+          <span class="demo-cred-role">Student</span>
+          <span class="demo-cred-email">student@eduplus.demo</span>
+          <span class="demo-cred-pass">student123</span>
+        </div>
+      </div>
+
+      <!-- Login form -->
+      <form id="login-form" novalidate>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" for="email-input">Email Address</label>
+          <input
+            class="form-input"
+            type="email"
+            id="email-input"
+            name="email"
+            placeholder="you@eduplus.demo"
+            autocomplete="username"
+            required
+            aria-describedby="email-error"
+          />
+          <span class="form-error hidden" id="email-error" aria-live="polite"></span>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label class="form-label" for="password-input">Password</label>
+          <input
+            class="form-input"
+            type="password"
+            id="password-input"
+            name="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+            aria-describedby="password-error"
+          />
+          <span class="form-error hidden" id="password-error" aria-live="polite"></span>
+        </div>
+
+        <div id="login-error" class="alert alert-error hidden" role="alert" style="margin-bottom: 16px;">
+          <span class="alert-icon">✕</span>
+          <span id="login-error-text">Invalid email or password.</span>
+        </div>
+
+        <button class="btn btn-primary btn-lg w-full" type="submit" id="login-btn">
+          <span id="login-btn-text">Sign In</span>
+          <span id="login-btn-spinner" class="spinner hidden">⟳</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Card footer -->
+    <div class="card-footer" style="text-align: center; padding: 12px 32px;">
+      <p style="font-size: 11px; color: var(--gray-400); line-height: 1.5;">
+        Example Engineering College &bull; AIML Department &bull; Academic Year 2026–27<br />
+        EduPlus v0.1-prototype &bull; <span style="color: var(--warning-500);">Demo — Not for production use</span>
+      </p>
+    </div>
+  </div>
+</main>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Scripts -->
+<script src="src/data/mockData.js"></script>
+<script>
+"use strict";
+
+// ─── CREDENTIAL AUTO-FILL ─────────────────────────────────────────────────────
+function fillCredentials(email, password) {
+  document.getElementById('email-input').value = email;
+  document.getElementById('password-input').value = password;
+  document.getElementById('email-input').dispatchEvent(new Event('input'));
+  document.getElementById('password-input').dispatchEvent(new Event('input'));
+}
+
+// Keyboard support for demo-cred rows
+document.querySelectorAll('.demo-cred-row').forEach(row => {
+  row.addEventListener('keypress', e => {
+    if (e.key === 'Enter' || e.key === ' ') row.click();
+  });
+});
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute('role', 'alert');
+  const icons = { success: '✓', error: '✕', info: 'ℹ', warning: '⚠' };
+  toast.innerHTML = `<span>${icons[type] || 'ℹ'}</span><span>${message}</span>`;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 350);
+  }, 3500);
+}
+
+// ─── LOGIN FORM SUBMISSION ─────────────────────────────────────────────────────
+const loginForm = document.getElementById('login-form');
+
+loginForm.addEventListener('submit', function (e) {
+  e.preventDefault();
+  clearErrors();
+
+  const email    = document.getElementById('email-input').value.trim();
+  const password = document.getElementById('password-input').value;
+  let valid = true;
+
+  if (!email) {
+    showFieldError('email-error', 'Email address is required.');
+    valid = false;
+  } else if (!email.includes('@')) {
+    showFieldError('email-error', 'Enter a valid email address.');
+    valid = false;
+  }
+  if (!password) {
+    showFieldError('password-error', 'Password is required.');
+    valid = false;
+  }
+  if (!valid) return;
+
+  // Simulate async login
+  setLoading(true);
+  setTimeout(() => {
+    const user = window.EduPlusData.DEMO_USERS.find(
+      u => u.email === email && u.password === password
+    );
+
+    setLoading(false);
+
+    if (!user) {
+      document.getElementById('login-error').classList.remove('hidden');
+      document.getElementById('login-error-text').textContent =
+        'Invalid email or password. Use one of the demo credentials above.';
+      return;
+    }
+
+    // Store mock session in sessionStorage
+    sessionStorage.setItem('eduplus_user', JSON.stringify(user));
+    showToast(`Welcome, ${user.name}! Redirecting…`, 'success');
+
+    setTimeout(() => {
+      const routes = {
+        admin:   'admin.html',
+        teacher: 'teacher.html',
+        student: 'student.html',
+      };
+      window.location.href = routes[user.role] || 'index.html';
+    }, 800);
+  }, 700);
+});
+
+function showFieldError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function clearErrors() {
+  ['email-error', 'password-error', 'login-error'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.classList.add('hidden'); el.textContent = ''; }
+  });
+}
+function setLoading(loading) {
+  const btn     = document.getElementById('login-btn');
+  const btnText = document.getElementById('login-btn-text');
+  const spinner = document.getElementById('login-btn-spinner');
+  btn.disabled = loading;
+  btnText.textContent = loading ? 'Signing in…' : 'Sign In';
+  spinner.classList.toggle('hidden', !loading);
+}
+
+// ─── REDIRECT IF ALREADY LOGGED IN ────────────────────────────────────────────
+const existingUser = sessionStorage.getItem('eduplus_user');
+if (existingUser) {
+  try {
+    const u = JSON.parse(existingUser);
+    const routes = { admin: 'admin.html', teacher: 'teacher.html', student: 'student.html' };
+    if (routes[u.role]) window.location.href = routes[u.role];
+  } catch (_) { sessionStorage.removeItem('eduplus_user'); }
+}
+</script>
+</body>
+</html>
