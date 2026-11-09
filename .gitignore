@@ -8,6 +8,7 @@ desktop.ini
 .env.*
 *.env
 *.local
+!.env.example
 
 # Node / JS
 node_modules/
@@ -35,3 +36,4 @@ dist/
 .vscode/
 *.swp
 *.swo
+
