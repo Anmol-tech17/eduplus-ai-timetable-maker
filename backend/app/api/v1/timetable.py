@@ -170,6 +170,13 @@ def validate_version(request: ValidateVersionRequest, db: Session = Depends(get_
         .filter(ScheduledSession.timetable_version_id == request.version_id)
         .all()
     )
+
+    # Restrict validation scope to assignments scheduled in this version (plus any assigned)
+    assigned_ta_ids = {str(s.teaching_assignment_id) for s in db_sessions}
+    if assigned_ta_ids:
+        scheduling_input.assignments = [
+            a for a in scheduling_input.assignments if a.id in assigned_ta_ids
+        ]
     # Map time_slot_id -> slot_index
     slot_index_map = {ts.id: ts.slot_index for ts in scheduling_input.time_slots
                       if hasattr(ts, 'id')}
@@ -294,7 +301,7 @@ def get_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
         SessionOut(
             assignment_id=str(s.teaching_assignment_id),
             teacher_id=str(s.teacher_id),
-            subject_id=str(s.teaching_assignment_id),
+            subject_id=str(s.teaching_assignment.subject_id if s.teaching_assignment else s.teaching_assignment_id),
             room_id=str(s.room_id),
             day_name=s.day_name,
             slot_index=slot_uuid_map.get(str(s.time_slot_id), 0),
@@ -303,6 +310,10 @@ def get_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
             target_group_id=str(s.target_group_id),
             duration_slots=1,
             is_frozen=s.is_frozen,
+            subject_name=s.teaching_assignment.subject.name if s.teaching_assignment and s.teaching_assignment.subject else None,
+            subject_code=s.teaching_assignment.subject.code if s.teaching_assignment and s.teaching_assignment.subject else None,
+            teacher_name=s.teacher.name if s.teacher else None,
+            room_name=s.room.name if s.room else None,
         )
         for s in db_sessions
     ]
@@ -333,6 +344,49 @@ def get_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
         hard_violations=sum(1 for v in db_violations if v.rule_level == "A"),
         sessions=sessions_out,
         violations=violations_out,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Publish version
+# ---------------------------------------------------------------------------
+
+@router.post("/versions/{version_id}/publish", response_model=TimetableVersionOut)
+def publish_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Publish a timetable version."""
+    from datetime import datetime
+    version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Timetable version not found.")
+
+    version.status = "published"
+    version.published_at = datetime.utcnow()
+    db.commit()
+    db.refresh(version)
+
+    session_count = (
+        db.query(ScheduledSession)
+        .filter(ScheduledSession.timetable_version_id == version.id)
+        .count()
+    )
+    hard_viol = (
+        db.query(Violation)
+        .filter(Violation.timetable_version_id == version.id, Violation.rule_level == "A")
+        .count()
+    )
+    return TimetableVersionOut(
+        id=version.id,
+        department_id=version.department_id,
+        version_number=version.version_number,
+        status=version.status,
+        label=version.label,
+        academic_year_code=version.academic_year_code,
+        semester=version.semester,
+        is_repair=version.is_repair,
+        published_at=version.published_at,
+        created_at=version.created_at,
+        total_sessions=session_count,
+        hard_violations=hard_viol,
     )
 
 
@@ -519,6 +573,10 @@ def _session_to_out(s: ScheduledSessionInfo) -> SessionOut:
         target_group_id=s.target_group_id,
         duration_slots=s.duration_slots,
         is_frozen=s.is_frozen,
+        subject_name=getattr(s, "subject_name", None),
+        subject_code=getattr(s, "subject_code", None),
+        teacher_name=getattr(s, "teacher_name", None),
+        room_name=getattr(s, "room_name", None),
     )
 
 

@@ -251,6 +251,61 @@ def seed_database(db: Session = None) -> dict:
                 stats["users"] += 1
         db.commit()
 
+        # 9. Teaching Assignments & Session Requirements (Year 3 Div A Baseline)
+        from backend.app.models.scheduling import TeachingAssignment, SessionRequirement
+        stats["teaching_assignments"] = 0
+        stats["session_requirements"] = 0
+        ay3 = db.query(AcademicYear).filter(AcademicYear.department_id == dept.id, AcademicYear.year_number == 3).first()
+        if ay3:
+            div3a = db.query(Division).filter(Division.academic_year_id == ay3.id, Division.name == "A").first()
+            if div3a:
+                existing_tas = db.query(TeachingAssignment).filter(TeachingAssignment.division_id == div3a.id).count()
+                if existing_tas == 0:
+                    subj_map = {s.code: s for s in db.query(Subject).filter(Subject.department_id == dept.id).all()}
+                    tchr_map = {t.email: t for t in db.query(Teacher).filter(Teacher.department_id == dept.id).all()}
+                    batches = {b.name: b for b in db.query(Batch).filter(Batch.division_id == div3a.id).all()}
+
+                    ta_specs = [
+                        ("AIML301", "admin@eduplus.demo", "lecture", None, 3, 1),
+                        ("AIML301", "teacher@eduplus.demo", "practical", "B1", 1, 2),
+                        ("AIML301", "teacher@eduplus.demo", "practical", "B2", 1, 2),
+                        ("AIML301", "teacher@eduplus.demo", "practical", "B3", 1, 2),
+                        ("AIML302", "v.singh@eduplus.demo", "lecture", None, 3, 1),
+                        ("AIML302", "v.singh@eduplus.demo", "practical", "B1", 1, 2),
+                        ("AIML302", "v.singh@eduplus.demo", "practical", "B2", 1, 2),
+                        ("AIML302", "v.singh@eduplus.demo", "practical", "B3", 1, 2),
+                        ("AIML303", "s.patel@eduplus.demo", "lecture", None, 3, 1),
+                        ("AIML303", "s.patel@eduplus.demo", "tutorial", None, 1, 1),
+                        ("AIML304", "a.desai@eduplus.demo", "lecture", None, 3, 1),
+                        ("AIML304", "s.joshi@eduplus.demo", "tutorial", None, 1, 1),
+                        ("AIML305", "v.singh@eduplus.demo", "lecture", None, 3, 1),
+                        ("AIML306", "m.iyer@eduplus.demo", "lecture", None, 3, 1),
+                        ("AIML307", "s.babu@eduplus.demo", "lecture", None, 3, 1),
+                    ]
+                    for code, temail, stype, bname, wcount, dur in ta_specs:
+                        s = subj_map.get(code)
+                        t = tchr_map.get(temail)
+                        b = batches.get(bname) if bname else None
+                        if s and t:
+                            ta = TeachingAssignment(
+                                subject_id=s.id,
+                                division_id=div3a.id,
+                                teacher_id=t.id,
+                                session_type=stype,
+                                batch_id=b.id if b else None,
+                            )
+                            db.add(ta)
+                            db.flush()
+                            stats["teaching_assignments"] += 1
+                            req = SessionRequirement(
+                                teaching_assignment_id=ta.id,
+                                weekly_count=wcount,
+                                duration_hours=dur,
+                            )
+                            db.add(req)
+                            stats["session_requirements"] += 1
+                    db.commit()
+
         logger.info(f"Database seed complete: {stats}")
         return stats
 

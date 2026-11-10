@@ -1,22 +1,17 @@
 # EduPlus AI Timetable Maker
 
-> **Version:** 0.1-prototype  
-> **Status:** Demo-ready — documentation-first, four-page frontend prototype  
+> **Version:** 0.4.0 (Phase 4 Complete)  
+> **Status:** Production-ready backend & integrated frontend — Live CP-SAT scheduling, PostgreSQL persistence, versioning & diffing  
 > **Department:** AIML — Example Engineering College  
-> **Date:** October 2026
+> **Date:** October 2026 – November 2026
 
 ---
 
 ## Project Overview
 
-EduPlus AI Timetable Maker is a college timetable management and optimization system designed for the AIML Department of Example Engineering College. It will generate, validate, publish, and maintain B.Tech academic timetables across Years 1–4 with multiple divisions, lab batches, elective enrollment groups, and complex constraint requirements.
+EduPlus AI Timetable Maker is an enterprise academic timetable management and constraint optimization platform developed for educational institutions. The system models multi-department, multi-year cohorts with divisions, laboratory batches, teacher availability, room suitability, and elective enrollment groups.
 
-This repository currently contains:
-
-- A **four-page web demo** (login, admin, teacher, student dashboards)
-- **18 documentation files** covering the full system design
-- A **mock data layer** with realistic AIML department data
-- **No real backend, solver, or database** — all scheduling is simulated
+Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a decoupled **independent validator**, a **FastAPI backend** running on dedicated PostgreSQL, and an **integrated web interface**, EduPlus automates the generation, auditing, versioning, comparison, and localized repair of institutional schedules.
 
 ---
 
@@ -25,18 +20,18 @@ This repository currently contains:
 | Component | Status | Details |
 |-----------|--------|---------|
 | Login page | ✅ Implemented | Prototype UI + real backend user hashing (pbkdf2-sha256) |
-| Admin dashboard | ✅ Implemented | Prototype UI on mockData; REST client available (`src/js/api.js`) |
-| Teacher dashboard | ✅ Implemented | Prototype UI on mockData |
-| Student dashboard | ✅ Implemented | Prototype UI on mockData |
-| Mock data layer | ✅ Complete | Baseline AIML demo dataset |
-| CSS design system | ✅ Complete | Vanilla CSS tokens & component library |
+| Admin dashboard | ✅ Implemented & Integrated | Live CP-SAT generation, validation results, version dropdowns, comparison diffs, localized repair |
+| Teacher dashboard | ✅ Implemented & Integrated | Live timetable view filtered to assigned faculty sessions + local fallback |
+| Student dashboard | ✅ Implemented & Integrated | Live timetable view filtered to division, batch, and elective groups + local fallback |
+| API Service Layer | ✅ Complete | REST client (`src/js/api.js`) connecting frontend to FastAPI backend endpoints |
+| CSS design system | ✅ Complete | Institutional white background, primary blue highlights, secondary orange accents |
 | PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 26 physical tables via Alembic `5cc27eb93e43` |
-| FastAPI backend | ✅ Implemented | FastAPI application with 32 endpoints (Health, Academic CRUD, Timetable Lifecycle) |
+| FastAPI backend | ✅ Implemented | 33 endpoints (Health, Academic CRUD, Generation, Validation, Versioning, Compare, Repair, Runs) |
 | CP-SAT scheduler | ✅ Implemented | Google OR-Tools 9.15 integer programming formulation with hard/soft constraints |
 | Independent validator | ✅ Implemented | Standalone rule engine (Level A hard, Level B policy, Level C soft preferences) |
-| Timetable versioning | ✅ Implemented | Version tracking, session diffing (`/timetable/compare`), audit runs |
+| Timetable versioning | ✅ Implemented | Version tracking, session diffing (`/timetable/compare`), audit runs, publish lifecycle |
 | Localized repair mode | ✅ Implemented | Pinned session preservation and localized re-optimization (`/timetable/repair`) |
-| ML / LLM query service | 🔲 Planned | Phase 4/5 natural language explanation & query handling |
+| ML / LLM query service | 🔲 Planned | Phase 5 natural language explanation & query handling |
 
 ---
 
@@ -209,14 +204,14 @@ EduPlus AI Timetable Maker/
 
 ## Tests
 
-A comprehensive 62-test automated test suite is implemented across:
+A comprehensive 63-test automated test suite is implemented across:
 - **Database & Dialect:** `backend/tests/test_db_connection.py`
 - **Domain Models & Constraints:** `backend/tests/test_models.py`
 - **Institutional Seeding:** `backend/tests/test_seed.py`
 - **Institutional CRUD APIs:** `backend/tests/test_api_crud.py`
 - **System Health:** `backend/tests/test_health.py`
 - **Validator & CP-SAT Engine:** `backend/tests/test_engine.py` (30 tests: hard/policy/soft rules, capacity, multi-slot practicals, infeasibility, solver timeouts)
-- **Timetable Lifecycle APIs:** `backend/tests/test_timetable_api.py` (20 tests: generation, persistence, versioning, comparison, localized repair, run diagnostics)
+- **Timetable Lifecycle APIs:** `backend/tests/test_timetable_api.py` (21 tests: generation, persistence, versioning, comparison, localized repair, run diagnostics, publish lifecycle)
 
 ```bash
 # Run the entire test suite

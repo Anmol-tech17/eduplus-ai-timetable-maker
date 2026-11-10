@@ -32,6 +32,61 @@ ROOMS.forEach(r => { ROOM_MAP[r.id] = r; });
 const LUNCH_SLOT = 'TS6';
 const DAYS_ORDER = DAYS;
 
+let _liveTeacherSessions = null;
+
+async function initTeacherLiveTimetable() {
+  if (!window.EduPlusAPI) return;
+  try {
+    const isLive = await window.EduPlusAPI.isBackendLive();
+    if (!isLive) return;
+
+    const versions = await window.EduPlusAPI.getVersions({ limit: 10 });
+    if (!versions || versions.length === 0) return;
+
+    const targetVer = versions.find(v => v.status === 'published') || versions[0];
+    const detail = await window.EduPlusAPI.getVersion(targetVer.id);
+
+    const teachersRes = await window.EduPlusAPI.getTeachers(null, 1, 100).catch(() => ({ items: [] }));
+    const teacherObj = (teachersRes.items || []).find(t =>
+      t.email === _teacherUser?.email ||
+      t.name?.toLowerCase().includes('arjun') ||
+      t.id === TEACHER_ID
+    );
+    const matchId = teacherObj ? teacherObj.id : TEACHER_ID;
+
+    const matched = (detail.sessions || []).filter(s =>
+      s.teacher_id === matchId || (teacherObj && s.teacher_name === teacherObj.name)
+    );
+
+    if (matched.length > 0) {
+      _liveTeacherSessions = matched.map(s => ({
+        id: s.assignment_id,
+        day: s.day_name,
+        slot: `TS${s.slot_index || 1}`,
+        slot_index: s.slot_index,
+        subjectId: s.subject_id,
+        subjectName: s.subject_name || s.subject_code || s.subject_id,
+        subjectShort: s.subject_code || s.subject_name || s.subject_id,
+        teacherId: s.teacher_id,
+        roomId: s.room_id,
+        roomName: s.room_name || s.room_id,
+        type: s.session_type,
+        targetGroup: `${s.target_group_type}: ${s.target_group_id}`,
+      }));
+      renderTeacherGrid(_teacherViewFilter);
+    }
+  } catch (err) {
+    console.warn('[Teacher Dashboard] Failed fetching live timetable:', err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initTeacherLiveTimetable();
+});
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  initTeacherLiveTimetable();
+}
+
 // ─── PANEL NAVIGATION ─────────────────────────────────────────────────────────
 const PANEL_TITLES = {
   'my-timetable':  'My Timetable',
@@ -91,9 +146,9 @@ function renderTeacherGrid(filter) {
   const grid = document.getElementById('teacher-tt-grid');
   if (!grid) return;
 
-  // Get sessions for this teacher
-  const mySessions = MOCK_TIMETABLE_VALID.sessions.filter(s => {
-    if (s.teacherId !== TEACHER_ID || s.hidden) return false;
+  // Get sessions for this teacher (live if available, else mock fallback)
+  const baseSessions = _liveTeacherSessions || MOCK_TIMETABLE_VALID.sessions.filter(s => s.teacherId === TEACHER_ID && !s.hidden);
+  const mySessions = baseSessions.filter(s => {
     if (filter === 'practical' && s.type !== 'practical') return false;
     if (filter === 'lecture'   && s.type !== 'lecture')   return false;
     return true;

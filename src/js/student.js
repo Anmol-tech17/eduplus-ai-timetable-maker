@@ -37,6 +37,50 @@ ROOMS.forEach(r => { ROOM_MAP_S[r.id] = r; });
 
 const LUNCH_SLOT = 'TS6';
 
+let _liveStudentSessions = null;
+
+async function initStudentLiveTimetable() {
+  if (!window.EduPlusAPI) return;
+  try {
+    const isLive = await window.EduPlusAPI.isBackendLive();
+    if (!isLive) return;
+
+    const versions = await window.EduPlusAPI.getVersions({ limit: 10 });
+    if (!versions || versions.length === 0) return;
+
+    const targetVer = versions.find(v => v.status === 'published') || versions[0];
+    const detail = await window.EduPlusAPI.getVersion(targetVer.id);
+
+    if (detail.sessions && detail.sessions.length > 0) {
+      _liveStudentSessions = detail.sessions.map(s => ({
+        id: s.assignment_id,
+        day: s.day_name,
+        slot: `TS${s.slot_index || 1}`,
+        slot_index: s.slot_index,
+        subjectId: s.subject_id,
+        subjectName: s.subject_name || s.subject_code || s.subject_id,
+        subjectShort: s.subject_code || s.subject_name || s.subject_id,
+        teacherId: s.teacher_id,
+        teacherName: s.teacher_name || s.teacher_id,
+        roomId: s.room_id,
+        roomName: s.room_name || s.room_id,
+        type: s.session_type,
+        targetGroup: s.target_group_type === 'batch' ? `DIV_${STUDENT_YEAR}${STUDENT_DIV}/${STUDENT_BATCH}` : `DIV_${STUDENT_YEAR}${STUDENT_DIV}`,
+      }));
+      renderStudentGrid();
+    }
+  } catch (err) {
+    console.warn('[Student Dashboard] Failed fetching live timetable:', err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initStudentLiveTimetable();
+});
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  initStudentLiveTimetable();
+}
+
 // ─── PANEL NAVIGATION ─────────────────────────────────────────────────────────
 const PANEL_TITLES = {
   'student-home':      'Overview',
@@ -109,7 +153,8 @@ function renderStudentGrid() {
   const grid = document.getElementById('student-tt-grid');
   if (!grid) return;
 
-  const mySessions = MOCK_TIMETABLE_VALID.sessions.filter(isSessionForStudent);
+  const baseSessions = _liveStudentSessions || MOCK_TIMETABLE_VALID.sessions;
+  const mySessions = baseSessions.filter(isSessionForStudent);
 
   // Build session map
   const sessionMap = {};

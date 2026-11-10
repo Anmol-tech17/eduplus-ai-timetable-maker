@@ -41,6 +41,11 @@ class SessionOut(BaseModel):
     target_group_id: str
     duration_slots: int
     is_frozen: bool
+    subject_name: Optional[str] = None
+    subject_code: Optional[str] = None
+    teacher_name: Optional[str] = None
+    room_name: Optional[str] = None
+    target_group_name: Optional[str] = None
 
 
 class ViolationOut(BaseModel):

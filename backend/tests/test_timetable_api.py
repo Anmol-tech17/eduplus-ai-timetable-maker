@@ -235,6 +235,16 @@ class TestVersionsEndpoint:
         assert isinstance(data["sessions"], list)
         assert len(data["sessions"]) >= 1
 
+    def test_publish_version_success(self, client: TestClient, db_session: Session):
+        gen_data = _generate_test_version(client, db_session)
+        version_id = gen_data["version_id"]
+
+        resp = client.post(f"/api/v1/timetable/versions/{version_id}/publish")
+        assert resp.status_code == 200
+        pub_data = resp.json()
+        assert pub_data["status"] == "published"
+        assert pub_data["published_at"] is not None
+
 
 class TestCompareEndpoint:
     """Tests for GET /api/v1/timetable/compare."""

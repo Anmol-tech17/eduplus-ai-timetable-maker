@@ -39,7 +39,10 @@
       </div>
       <div class="nav-item" id="nav-conflicts" onclick="showPanel('conflicts')" role="button" tabindex="0">
         <span class="nav-item-icon">⚠</span> Conflicts
-        <span class="nav-item-badge" id="conflict-count-badge">3</span>
+        <span class="nav-item-badge" id="conflict-count-badge">0</span>
+      </div>
+      <div class="nav-item" id="nav-compare" onclick="showPanel('compare')" role="button" tabindex="0">
+        <span class="nav-item-icon">⚖</span> Version Comparison
       </div>
 
       <div class="nav-section-label">Academic Data</div>
@@ -81,20 +84,19 @@
         <div class="topbar-subtitle">AIML Department · Example Engineering College · 2026–27</div>
       </div>
       <div class="topbar-actions">
-        <span class="badge badge-mock">⚠ Prototype Demo</span>
-        <span class="status-pill status-published"><span class="status-dot"></span> TT v1 Published</span>
+        <span class="badge badge-live" id="backend-status-badge">● Live Backend (FastAPI + CP-SAT)</span>
+        <span class="status-pill status-published" id="topbar-tt-pill"><span class="status-dot"></span> <span id="topbar-tt-label">Timetable v1</span></span>
       </div>
     </header>
 
     <!-- Page content panels -->
     <div class="page-content">
 
-      <!-- Prototype banner -->
-      <div class="proto-banner" role="note" aria-label="Prototype notice">
-        <span style="font-size:18px">⚠️</span>
-        <div>
-          <strong>Prototype Demo:</strong> All timetable data is mock data. The scheduling engine (CP-SAT solver), database, and authentication system are not yet implemented.
-          Mock data is labelled clearly. <strong>No real solver has been run.</strong>
+      <!-- Backend connection banner -->
+      <div class="proto-banner" id="backend-connection-banner" role="note" aria-label="System status">
+        <span style="font-size:18px" id="connection-banner-icon">⚡</span>
+        <div id="connection-banner-text">
+          <strong>Live Backend Operational:</strong> FastAPI backend and Google OR-Tools CP-SAT scheduling engine are connected on PostgreSQL (Port 5433).
         </div>
       </div>
 
@@ -254,16 +256,21 @@
         <div class="section-header">
           <div>
             <h1 class="section-title">Timetable Grid</h1>
-            <p class="section-desc">Weekly timetable — Year 3, Division A (Semester 5)</p>
+            <p class="section-desc" id="grid-subtitle">Weekly timetable — Year 3, Division A (Semester 5)</p>
           </div>
           <div style="display:flex; gap: var(--sp-3); align-items: center;">
-            <span class="status-pill status-published"><span class="status-dot"></span> Published — v1</span>
-            <span class="badge badge-mock">Mock Data</span>
+            <span class="status-pill status-published" id="grid-status-pill"><span class="status-dot"></span> <span id="grid-status-text">Published — v1</span></span>
+            <span class="badge badge-live" id="grid-source-badge">Live DB Version</span>
+            <button class="btn btn-secondary btn-sm" id="btn-revalidate-current" onclick="revalidateActiveVersion()">⚙ Validate Version</button>
           </div>
         </div>
 
         <!-- Filter bar -->
         <div class="filter-bar" id="filter-bar" role="search" aria-label="Timetable filters">
+          <span class="filter-label" style="font-weight:700;">Version:</span>
+          <select class="filter-select" id="filter-version" aria-label="Select Timetable Version" style="font-weight:600; min-width:200px;" onchange="onVersionSelected(this.value)">
+            <!-- Populated dynamically -->
+          </select>
           <span class="filter-label">Filter:</span>
           <select class="filter-select" id="filter-year" aria-label="Filter by year" onchange="applyFilters()">
             <option value="3">Year 3</option>
@@ -332,102 +339,69 @@
         </div>
 
         <!-- Solver status notice -->
-        <div class="alert alert-warning" role="alert" style="margin-bottom: var(--sp-5);">
-          <span class="alert-icon">⚠</span>
+        <div class="alert alert-info" id="solver-notice-banner" role="alert" style="margin-bottom: var(--sp-5);">
+          <span class="alert-icon">⚡</span>
           <div>
-            <strong>Scheduling Engine Not Yet Implemented.</strong>
-            The CP-SAT constraint solver described in the project specification is planned for a future development phase.
-            This panel demonstrates the intended workflow using pre-generated mock candidates.
-            No real optimization has taken place.
+            <strong>Google OR-Tools CP-SAT Scheduling Engine Connected.</strong>
+            Configure the parameters below and generate an optimal, multi-constraint timetable persisted directly to PostgreSQL.
           </div>
         </div>
 
         <div class="grid grid-content">
           <!-- Left: controls -->
           <div>
-            <!-- Candidate selection -->
+            <!-- Solver parameters -->
             <div class="card" style="margin-bottom: var(--sp-5);">
               <div class="card-header">
-                <div class="card-title">Candidate Selection</div>
-                <span class="badge badge-mock">Mock Candidates</span>
+                <div class="card-title">Generation Parameters</div>
+                <span class="badge badge-live">CP-SAT Engine</span>
               </div>
-              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-3);">
-                <div
-                  class="version-card selected"
-                  id="candidate-valid"
-                  onclick="selectCandidate('valid')"
-                  role="button" tabindex="0"
-                  aria-label="Select Candidate 1 — Valid"
-                >
-                  <div>
-                    <div class="version-num">Candidate 1</div>
-                    <div class="version-meta">Status: COMPLETE &bull; All requirements placed &bull; 0 violations</div>
-                  </div>
-                  <span class="status-pill status-published"><span class="status-dot"></span> Valid</span>
+              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-4);">
+                <div class="form-group">
+                  <label class="form-label" for="param-department">Department</label>
+                  <select class="form-select" id="param-department"></select>
                 </div>
-
-                <div
-                  class="version-card"
-                  id="candidate-conflict"
-                  onclick="selectCandidate('conflict')"
-                  role="button" tabindex="0"
-                  aria-label="Select Candidate 2 — Diagnostic"
-                >
-                  <div>
-                    <div class="version-num">Candidate 2</div>
-                    <div class="version-meta">Status: INCOMPLETE &bull; 3 hard violations &bull; 1 unscheduled requirement</div>
-                  </div>
-                  <span class="status-pill status-diagnostic"><span class="status-dot"></span> Diagnostic</span>
+                <div class="form-group">
+                  <label class="form-label" for="param-year">Academic Year</label>
+                  <select class="form-select" id="param-year"></select>
                 </div>
-
+                <div class="form-group">
+                  <label class="form-label" for="param-label">Version Label</label>
+                  <input class="form-input" id="param-label" type="text" value="AY2026-27 Sem 5 - Automated Candidate" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="param-timeout">Solver Time Limit (seconds)</label>
+                  <input class="form-input" id="param-timeout" type="number" value="30" min="5" max="300" />
+                </div>
+                <div style="display:flex; align-items:center; gap: 8px;">
+                  <input type="checkbox" id="param-check-soft" checked />
+                  <label for="param-check-soft" style="font-size: var(--text-sm); font-weight:600; cursor:pointer;">Optimize Soft Constraints (Compactness &amp; Preferences)</label>
+                </div>
                 <div style="margin-top: var(--sp-2);">
                   <button
                     class="btn btn-generate w-full"
                     id="btn-generate-new"
-                    onclick="simulateGenerate()"
-                    aria-label="Simulate timetable generation"
+                    onclick="triggerRealGeneration()"
+                    aria-label="Generate timetable using CP-SAT"
                   >
                     <span id="gen-btn-icon">⚙</span>
-                    <span id="gen-btn-text">Simulate Generate</span>
+                    <span id="gen-btn-text">Generate New Timetable</span>
                   </button>
                   <p class="form-hint" style="margin-top: 8px; text-align: center;">
-                    ⚠ This does not invoke the real CP-SAT solver. A mock candidate will be displayed.
+                    ⚡ Runs CP-SAT solver and executes independent validation rules A01–C02.
                   </p>
                 </div>
               </div>
             </div>
 
-            <!-- Solver parameters (UI mock) -->
+            <!-- Candidate selection -->
             <div class="card">
               <div class="card-header">
-                <div class="card-title">Solver Parameters</div>
-                <span class="badge badge-neutral">Planned — UI Preview</span>
+                <div class="card-title">Available Versions &amp; Candidates</div>
+                <span class="badge badge-brand" id="version-count-badge">0 saved</span>
               </div>
-              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-4);">
-                <div class="form-group">
-                  <label class="form-label" for="param-year">Target Year</label>
-                  <select class="form-select" id="param-year" disabled>
-                    <option>Year 3</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="param-division">Division</label>
-                  <select class="form-select" id="param-division" disabled>
-                    <option>All Divisions</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="param-timeout">Solver Time Limit (seconds)</label>
-                  <input class="form-input" id="param-timeout" type="number" value="60" disabled />
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="param-candidates">Max Candidates</label>
-                  <input class="form-input" id="param-candidates" type="number" value="3" disabled />
-                </div>
-                <div class="alert alert-info" role="note">
-                  <span class="alert-icon">ℹ</span>
-                  <span>These controls are non-functional in the prototype. They preview the planned solver configuration interface.</span>
-                </div>
+              <div class="card-body" id="candidates-container" style="display: flex; flex-direction: column; gap: var(--sp-3); max-height: 380px; overflow-y: auto;">
+                <!-- Populated dynamically from API -->
               </div>
             </div>
           </div>
@@ -437,8 +411,8 @@
             <div class="card" style="margin-bottom: var(--sp-5);">
               <div class="card-header">
                 <div>
-                  <div class="card-title">Validation Results</div>
-                  <div class="card-subtitle" id="validation-subtitle">Candidate 1 — Selected</div>
+                  <div class="card-title">Solver Diagnostics &amp; Validation</div>
+                  <div class="card-subtitle" id="validation-subtitle">Select or generate a candidate</div>
                 </div>
                 <div id="validation-status-chip"></div>
               </div>
@@ -455,16 +429,16 @@
               <button
                 class="btn btn-success btn-lg"
                 id="btn-publish"
-                onclick="simulatePublish()"
-                aria-label="Simulate publishing timetable"
+                onclick="publishCurrentCandidate()"
+                aria-label="Publish selected timetable version"
                 style="flex:1;"
               >✓ Publish Timetable</button>
               <button class="btn btn-secondary btn-lg" onclick="showPanel('timetable')" style="flex:1;">
                 View Grid →
               </button>
             </div>
-            <p class="form-hint" style="text-align: center; margin-top: 8px;">
-              ⚠ Publish is simulated — no real database write occurs.
+            <p class="form-hint" id="publish-hint-text" style="text-align: center; margin-top: 8px;">
+              Publishing marks the version as published in the database and distributes to teachers and students.
             </p>
           </div>
         </div>
@@ -524,6 +498,127 @@
                 </table>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- PANEL: VERSION COMPARISON & REPAIR                                 -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <section id="panel-compare" class="panel hidden" aria-label="Version comparison and localized repair">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title">Version Comparison &amp; Localized Repair</h1>
+            <p class="section-desc">Audit differences between schedule versions and perform non-disruptive repairs</p>
+          </div>
+          <span class="badge badge-brand">Audit &amp; Diff Engine</span>
+        </div>
+
+        <div class="card" style="margin-bottom: var(--sp-5);">
+          <div class="card-header">
+            <div class="card-title">Select Versions to Compare</div>
+          </div>
+          <div class="card-body">
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--sp-4); align-items: flex-end;">
+              <div class="form-group">
+                <label class="form-label" for="compare-version-a">Base Version (Version A)</label>
+                <select class="form-select" id="compare-version-a"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="compare-version-b">Comparison Version (Version B)</label>
+                <select class="form-select" id="compare-version-b"></select>
+              </div>
+              <div>
+                <button class="btn btn-primary" id="btn-run-compare" onclick="runVersionComparison()">
+                  ⚖ Compare Versions
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comparison Summary Cards -->
+        <div class="grid grid-cols-4" id="compare-stats" style="margin-bottom: var(--sp-5); display: none;">
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-blue">➕</div>
+            <div>
+              <div class="stat-value" id="diff-added-count">0</div>
+              <div class="stat-label">Added Sessions</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-amber">🔀</div>
+            <div>
+              <div class="stat-value" id="diff-moved-count">0</div>
+              <div class="stat-label">Moved / Rescheduled</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-red">➖</div>
+            <div>
+              <div class="stat-value" id="diff-removed-count">0</div>
+              <div class="stat-label">Removed Sessions</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon-green">✓</div>
+            <div>
+              <div class="stat-value" id="diff-unchanged-count">0</div>
+              <div class="stat-label">Unchanged Sessions</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Diff Table -->
+        <div class="card" id="compare-diff-card" style="margin-bottom: var(--sp-6); display: none;">
+          <div class="card-header">
+            <div class="card-title">Session-Level Differences</div>
+            <div class="text-xs text-muted" id="compare-diff-subtitle"></div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Assignment / Subject</th>
+                  <th>Teacher</th>
+                  <th>Version A (Original)</th>
+                  <th>Version B (New)</th>
+                </tr>
+              </thead>
+              <tbody id="compare-diff-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Localized Repair Section -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Localized Repair (Targeted Rescheduling)</div>
+              <div class="card-subtitle">Keep pinned sessions fixed and re-schedule only conflicting or unfrozen assignments</div>
+            </div>
+            <span class="badge badge-orange">CP-SAT Minimal Perturbation</span>
+          </div>
+          <div class="card-body">
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--sp-4); align-items: flex-end;">
+              <div class="form-group">
+                <label class="form-label" for="repair-source-version">Source Version to Repair</label>
+                <select class="form-select" id="repair-source-version"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="repair-label">Repaired Version Label</label>
+                <input class="form-input" id="repair-label" type="text" value="AY2026-27 Sem 5 - Localized Repair" />
+              </div>
+              <div>
+                <button class="btn btn-orange" id="btn-run-repair" onclick="runLocalizedRepair()">
+                  🔧 Run Localized Repair
+                </button>
+              </div>
+            </div>
+            <p class="form-hint" style="margin-top: 10px;">
+              ℹ Frozen/pinned sessions from the source version will be strictly preserved at their current slots and rooms.
+            </p>
           </div>
         </div>
       </section>
@@ -637,6 +732,7 @@
 <!-- Toast container -->
 <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+<script src="src/js/api.js"></script>
 <script src="src/data/mockData.js"></script>
 <script src="src/js/admin.js"></script>
 </body>
