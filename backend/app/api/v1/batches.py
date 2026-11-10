@@ -55,3 +55,4 @@ def list_batches(
     if division_id:
         query = query.filter(Batch.division_id == division_id)
     return query.order_by(Batch.name.asc()).all()
+

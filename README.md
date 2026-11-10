@@ -22,37 +22,43 @@ This repository currently contains:
 
 ## Current Implementation Status
 
-| Component | Status |
-|-----------|--------|
-| Login page | ✅ Implemented (mock auth) |
-| Admin dashboard | ✅ Implemented (mock data) |
-| Teacher dashboard | ✅ Implemented (mock data) |
-| Student dashboard | ✅ Implemented (mock data) |
-| Mock data layer | ✅ Complete |
-| CSS design system | ✅ Complete |
-| PostgreSQL schema | 📋 Designed (docs only) |
-| FastAPI backend | 🔲 Not implemented |
-| CP-SAT scheduler | 🔲 Not implemented |
-| Independent validator | 🔲 Not implemented |
-| Timetable versioning | 🔲 Not implemented |
-| Repair mode | 🔲 Not implemented |
-| ML query service | 🔲 Planned (future phase) |
-
-> ⚠️ **All timetables shown in the demo are hand-crafted illustrative examples. No constraint solver has been run.**
+| Component | Status | Details |
+|-----------|--------|---------|
+| Login page | ✅ Implemented | Prototype UI + real backend user hashing (pbkdf2-sha256) |
+| Admin dashboard | ✅ Implemented | Prototype UI on mockData; REST client available (`src/js/api.js`) |
+| Teacher dashboard | ✅ Implemented | Prototype UI on mockData |
+| Student dashboard | ✅ Implemented | Prototype UI on mockData |
+| Mock data layer | ✅ Complete | Baseline AIML demo dataset |
+| CSS design system | ✅ Complete | Vanilla CSS tokens & component library |
+| PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 26 physical tables via Alembic `5cc27eb93e43` |
+| FastAPI backend | ✅ Implemented | FastAPI application with 32 endpoints (Health, Academic CRUD, Timetable Lifecycle) |
+| CP-SAT scheduler | ✅ Implemented | Google OR-Tools 9.15 integer programming formulation with hard/soft constraints |
+| Independent validator | ✅ Implemented | Standalone rule engine (Level A hard, Level B policy, Level C soft preferences) |
+| Timetable versioning | ✅ Implemented | Version tracking, session diffing (`/timetable/compare`), audit runs |
+| Localized repair mode | ✅ Implemented | Pinned session preservation and localized re-optimization (`/timetable/repair`) |
+| ML / LLM query service | 🔲 Planned | Phase 4/5 natural language explanation & query handling |
 
 ---
 
 ## Technology Stack
 
-### Demo (Current)
+### Backend & Optimization Engine (Phase 0 – Phase 3)
 | Layer | Technology |
 |-------|-----------|
-| Markup | HTML5 |
-| Styling | Vanilla CSS (custom design system) |
-| Logic | Vanilla JavaScript (ES2020, no bundler) |
-| Fonts | Inter, JetBrains Mono (Google Fonts) |
+| Runtime | Python 3.10 |
+| Framework | FastAPI 0.115 + Pydantic v2 + Uvicorn |
+| Database | PostgreSQL 18.6 (dedicated local cluster on port 5433) |
+| ORM & Migrations | SQLAlchemy 2.0 + Alembic |
+| Constraint Solver | Google OR-Tools 9.15 CP-SAT (`ortools`) |
+| Validation Engine | Independent multi-level rule validator (`backend/app/engine/validator.py`) |
+| Test Suite | Pytest 9.2 + Pytest-Asyncio + HTTPX TestClient (62 automated tests) |
+
+### Frontend Prototype (Phase 0)
+| Layer | Technology |
+|-------|-----------|
+| Markup & Styling | HTML5 + Vanilla CSS design system |
+| Logic & API Client | Vanilla JS (ES2020) + `src/js/api.js` (Fetch REST client) |
 | Data | In-memory mock data (`src/data/mockData.js`) |
-| Auth | `sessionStorage`-based mock session |
 
 ### Planned Production Stack
 | Layer | Technology |
@@ -203,33 +209,39 @@ EduPlus AI Timetable Maker/
 
 ## Tests
 
-No automated tests exist in the prototype phase.
+A comprehensive 62-test automated test suite is implemented across:
+- **Database & Dialect:** `backend/tests/test_db_connection.py`
+- **Domain Models & Constraints:** `backend/tests/test_models.py`
+- **Institutional Seeding:** `backend/tests/test_seed.py`
+- **Institutional CRUD APIs:** `backend/tests/test_api_crud.py`
+- **System Health:** `backend/tests/test_health.py`
+- **Validator & CP-SAT Engine:** `backend/tests/test_engine.py` (30 tests: hard/policy/soft rules, capacity, multi-slot practicals, infeasibility, solver timeouts)
+- **Timetable Lifecycle APIs:** `backend/tests/test_timetable_api.py` (20 tests: generation, persistence, versioning, comparison, localized repair, run diagnostics)
 
-See [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) for the planned test strategy covering unit tests, validator tests, solver integration tests, property-based tests, and UI interaction tests.
+```bash
+# Run the entire test suite
+python -m pytest backend/tests -v
+
+# Run engine tests only
+python -m pytest backend/tests/test_engine.py -v
+
+# Run timetable API tests only
+python -m pytest backend/tests/test_timetable_api.py -v
+```
 
 ---
 
 ## Documentation
 
-All technical documentation is in the `docs/` directory. Start with:
+All technical documentation is in the `docs/` directory. Key design references:
 
 1. [`docs/PROJECT_SPECIFICATION.md`](docs/PROJECT_SPECIFICATION.md) — goals and requirements
 2. [`docs/DOMAIN_MODEL.md`](docs/DOMAIN_MODEL.md) — academic domain entities
 3. [`docs/ER_DIAGRAM.md`](docs/ER_DIAGRAM.md) — database entity relationships
 4. [`docs/SCHEDULING_RULES.md`](docs/SCHEDULING_RULES.md) — constraint catalogue
-5. [`docs/SYSTEM_ARCHITECTURE.md`](docs/SYSTEM_ARCHITECTURE.md) — component design
-6. [`docs/OPEN_QUESTIONS_AND_ASSUMPTIONS.md`](docs/OPEN_QUESTIONS_AND_ASSUMPTIONS.md) — unresolved decisions
-7. [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) — phased plan
-
----
-
-## Contact and Continuation
-
-This prototype was built as the documentation-first foundation for EduPlus. A developer continuing this project should:
-
-1. Confirm open questions in `OPEN_QUESTIONS_AND_ASSUMPTIONS.md` with the institution.
-2. Implement the PostgreSQL schema from `DATABASE_SCHEMA.md`.
-3. Build the independent validator from `VALIDATION_AND_INFERENCE.md`.
-4. Build the CP-SAT scheduler from `SCHEDULER_DESIGN.md`.
-5. Build the FastAPI backend from `API_SPECIFICATION.md`.
-6. Migrate the frontend to React + Vite + TypeScript.
+5. [`docs/SCHEDULER_DESIGN.md`](docs/SCHEDULER_DESIGN.md) — CP-SAT formulation and objective weights
+6. [`docs/VALIDATION_AND_INFERENCE.md`](docs/VALIDATION_AND_INFERENCE.md) — independent validator design
+7. [`docs/SYSTEM_ARCHITECTURE.md`](docs/SYSTEM_ARCHITECTURE.md) — backend & service architecture
+8. [`docs/API_SPECIFICATION.md`](docs/API_SPECIFICATION.md) — REST API endpoints
+9. [`docs/TIMETABLE_VERSIONING_AND_REPAIR.md`](docs/TIMETABLE_VERSIONING_AND_REPAIR.md) — versioning, diffing & repair
+10. [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) — phased development roadmap

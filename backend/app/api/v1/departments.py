@@ -118,3 +118,4 @@ def delete_department(dept_id: UUID, db: Session = Depends(get_db)):
             detail="Cannot delete department: associated academic records exist."
         )
     return None
+

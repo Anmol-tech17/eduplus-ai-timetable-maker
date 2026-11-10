@@ -81,3 +81,4 @@ def get_room(room_id: UUID, db: Session = Depends(get_db)):
             detail=f"Room with ID {room_id} not found."
         )
     return r
+

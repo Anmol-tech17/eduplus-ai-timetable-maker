@@ -77,3 +77,4 @@ def get_division(div_id: UUID, db: Session = Depends(get_db)):
             detail=f"Division with ID {div_id} not found."
         )
     return div
+

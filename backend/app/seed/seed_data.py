@@ -262,3 +262,4 @@ def seed_database(db: Session = None) -> dict:
 if __name__ == "__main__":
     result = seed_database()
     print("Seed execution finished:", result)
+

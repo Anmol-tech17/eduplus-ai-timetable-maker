@@ -28,3 +28,4 @@ def check_health(db: Session = Depends(get_db)):
         "environment": settings.ENVIRONMENT,
         "database": db_status,
     }
+

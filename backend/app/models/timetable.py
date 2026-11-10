@@ -143,3 +143,4 @@ class SessionException(Base):
     substitute_teacher = relationship("Teacher", foreign_keys=[substitute_teacher_id])
     alternate_room = relationship("Room", foreign_keys=[alternate_room_id])
     alternate_slot = relationship("TimeSlot", foreign_keys=[alternate_slot_id])
+

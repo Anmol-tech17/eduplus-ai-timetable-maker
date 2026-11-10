@@ -19,3 +19,4 @@ def test_postgresql_dialect(db_session):
     version_row = db_session.execute(text("SHOW server_version")).fetchone()
     assert version_row is not None
     assert "18" in version_row[0]  # PostgreSQL 18
+

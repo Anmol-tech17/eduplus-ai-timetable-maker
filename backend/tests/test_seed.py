@@ -39,3 +39,4 @@ def test_seed_execution_and_idempotency(db_session):
     assert stats2["subjects"] == 0
     assert stats2["rooms"] == 0
     assert stats2["users"] == 0
+

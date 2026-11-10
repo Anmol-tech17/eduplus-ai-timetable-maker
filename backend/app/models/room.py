@@ -48,3 +48,4 @@ class RoomCapability(Base):
     )
 
     room = relationship("Room", back_populates="capabilities")
+

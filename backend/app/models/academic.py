@@ -143,3 +143,4 @@ class EnrollmentGroupOverlap(Base):
 
     group_a = relationship("EnrollmentGroup", foreign_keys=[group_a_id])
     group_b = relationship("EnrollmentGroup", foreign_keys=[group_b_id])
+

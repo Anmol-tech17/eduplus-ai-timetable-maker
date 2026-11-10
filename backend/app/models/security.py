@@ -47,3 +47,4 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("UserAccount", back_populates="audit_logs")
+

@@ -70,3 +70,4 @@ class TeacherAvailability(Base):
 
     teacher = relationship("Teacher", back_populates="availabilities")
     time_slot = relationship("TimeSlot")
+

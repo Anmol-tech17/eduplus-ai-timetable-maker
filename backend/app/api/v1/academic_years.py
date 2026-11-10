@@ -68,3 +68,4 @@ def get_academic_year(year_id: UUID, db: Session = Depends(get_db)):
             detail=f"Academic Year with ID {year_id} not found."
         )
     return ay
+

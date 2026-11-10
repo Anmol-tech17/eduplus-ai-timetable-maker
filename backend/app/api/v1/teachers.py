@@ -113,3 +113,4 @@ def update_teacher(teacher_id: UUID, teacher_in: TeacherUpdate, db: Session = De
     db.commit()
     db.refresh(t)
     return t
+

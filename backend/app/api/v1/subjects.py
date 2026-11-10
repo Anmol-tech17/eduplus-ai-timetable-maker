@@ -85,3 +85,4 @@ def get_subject(sub_id: UUID, db: Session = Depends(get_db)):
             detail=f"Subject with ID {sub_id} not found."
         )
     return sub
+

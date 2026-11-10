@@ -21,3 +21,4 @@ def test_health_check_endpoint(client):
     assert data["status"] == "healthy"
     assert data["database"] == "connected"
     assert data["service"] == "EduPlus AI Timetable Maker"
+

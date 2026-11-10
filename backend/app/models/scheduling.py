@@ -98,3 +98,4 @@ class SessionRequirement(Base):
     )
 
     teaching_assignment = relationship("TeachingAssignment", back_populates="session_requirements")
+
