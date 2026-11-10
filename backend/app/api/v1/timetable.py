@@ -29,6 +29,7 @@ from backend.app.engine.persistence import persist_generation_result
 from backend.app.engine.solver import run_solver
 from backend.app.engine.types import (
     ScheduledSessionInfo,
+    SlotKey,
     SolverStatus,
     ViolationLevel,
 )
@@ -96,6 +97,42 @@ def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)
         f"rooms={len(scheduling_input.rooms)}, "
         f"time_limit={request.time_limit_seconds}s"
     )
+
+    # Apply user-confirmed AI / coordinator constraints
+    if request.confirmed_constraints:
+        logger.info(f"Applying {len(request.confirmed_constraints)} confirmed constraints to scheduling input")
+        active_days = [wd.day_name for wd in scheduling_input.working_days if wd.is_active]
+        for c in request.confirmed_constraints:
+            cat = c.get("category")
+            target_id = c.get("target_id")
+            slot_indices = c.get("slot_indices", [])
+            day_names = c.get("day_names", []) or active_days
+
+            if cat == "teacher_unavailability" and target_id:
+                for teacher in scheduling_input.teachers:
+                    if teacher.id == target_id:
+                        for d_name in day_names:
+                            for s_idx in slot_indices:
+                                key = SlotKey(day_name=d_name, slot_index=s_idx)
+                                if key not in teacher.unavailable_slots:
+                                    teacher.unavailable_slots.append(key)
+
+            elif cat == "teacher_preference" and target_id:
+                for teacher in scheduling_input.teachers:
+                    if teacher.id == target_id:
+                        for d_name in day_names:
+                            for s_idx in slot_indices:
+                                key = SlotKey(day_name=d_name, slot_index=s_idx)
+                                if key not in teacher.preferred_slots:
+                                    teacher.preferred_slots.append(key)
+
+            elif cat == "practical_block":
+                for d_name in day_names:
+                    if d_name not in scheduling_input.blocked_practical_days:
+                        scheduling_input.blocked_practical_days.append(d_name)
+
+            elif cat == "gap_minimization":
+                scheduling_input.gap_penalty_weight = 6
 
     # Solve
     solver_result = run_solver(scheduling_input, time_limit_seconds=request.time_limit_seconds)

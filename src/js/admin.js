@@ -179,6 +179,7 @@
         // Fetch academic data in parallel
         await loadAcademicMetadata();
         await loadTimetableVersions();
+        await checkAIStatus();
       } else {
         markOfflineMode();
       }
@@ -699,7 +700,7 @@
     }
   }
 
-  async function triggerRealGeneration() {
+  async function triggerRealGeneration(options = {}) {
     if (!_isBackendLive) {
       simulateGenerate();
       return;
@@ -714,6 +715,7 @@
     const label = document.getElementById('param-label')?.value || 'AY2026-27 Sem 5 - Automated Schedule';
     const timeout = parseInt(document.getElementById('param-timeout')?.value || '30', 10);
     const checkSoft = document.getElementById('param-check-soft')?.checked ?? true;
+    const confirmedConstraints = options.confirmed_constraints || _pendingConfirmedConstraints || null;
 
     if (!deptId) {
       showToast('Please select a department.', 'warning');
@@ -734,11 +736,13 @@
         semester: 1,
         time_limit_seconds: Math.max(5, Math.min(300, timeout)),
         check_soft_constraints: checkSoft,
+        confirmed_constraints: confirmedConstraints,
       };
 
       const result = await window.EduPlusAPI.generateTimetable(payload);
 
       showToast(`CP-SAT solver finished in ${result.solver_time_ms}ms with status ${result.status}! (${result.total_sessions} sessions)`, 'success');
+      _pendingConfirmedConstraints = null;
 
       // Refresh versions list and select the new one
       await loadTimetableVersions();
@@ -1188,6 +1192,302 @@
     if (sessEl) sessEl.textContent = SUMMARY_STATS.totalSessions;
   }
 
+  // ─── PHASE 5: AI NATURAL-LANGUAGE SCHEDULING ASSISTANT ──────────────────────
+  let _lastInterpretedResponse = null;
+  let _pendingConfirmedConstraints = null;
+
+  async function checkAIStatus() {
+    const badge = document.getElementById('ai-status-badge');
+    if (!badge) return;
+    try {
+      if (!_isBackendLive) {
+        badge.textContent = 'AI: Offline Demo Mode';
+        badge.className = 'badge badge-neutral';
+        return;
+      }
+      const status = await window.EduPlusAPI.getAIStatus();
+      if (status && status.is_available) {
+        badge.textContent = `AI: ${status.provider.includes('gemini') ? 'Gemini Online' : 'Active (Local Grounded)'}`;
+        badge.className = 'badge badge-brand';
+      } else {
+        badge.textContent = 'AI: Standby';
+        badge.className = 'badge badge-neutral';
+      }
+    } catch (_) {
+      badge.textContent = 'AI: Standby';
+      badge.className = 'badge badge-neutral';
+    }
+  }
+
+  function setAIPrompt(text) {
+    const textarea = document.getElementById('ai-prompt-input');
+    if (textarea) {
+      textarea.value = text;
+      textarea.focus();
+    }
+  }
+
+  function clearAIPrompt() {
+    const textarea = document.getElementById('ai-prompt-input');
+    if (textarea) textarea.value = '';
+    const preview = document.getElementById('ai-preview-container');
+    if (preview) {
+      preview.style.display = 'none';
+      preview.innerHTML = '';
+    }
+    _lastInterpretedResponse = null;
+    _pendingConfirmedConstraints = null;
+  }
+
+  async function interpretAIPrompt() {
+    const input = document.getElementById('ai-prompt-input');
+    const prompt = input?.value?.trim();
+    if (!prompt) {
+      showToast('Please enter a scheduling instruction.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btn-ai-interpret');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner">⟳</span> Interpreting…';
+    }
+
+    const deptId = document.getElementById('param-department')?.value || (_departments[0]?.id);
+    const ayId = document.getElementById('param-year')?.value;
+
+    try {
+      const response = await window.EduPlusAPI.interpretPrompt(prompt, deptId, ayId);
+      _lastInterpretedResponse = response;
+      renderAIInterpretationPreview(response);
+    } catch (err) {
+      console.error('[EduPlus AI] Interpretation failed:', err);
+      showToast(`AI Interpretation failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  function renderAIInterpretationPreview(data) {
+    const container = document.getElementById('ai-preview-container');
+    if (!container) return;
+
+    if (!data.constraints || data.constraints.length === 0) {
+      container.style.display = 'block';
+      container.innerHTML = `
+        <div class="alert alert-info" style="font-size: var(--text-sm);">
+          <strong>No constraints detected.</strong> ${data.summary || 'Try phrasing with specific teacher names or time slots.'}
+        </div>
+      `;
+      return;
+    }
+
+    let constraintsHtml = '';
+    data.constraints.forEach((c, idx) => {
+      const levelBadge = c.level === 'HARD'
+        ? '<span class="badge badge-error">Level A (Hard)</span>'
+        : '<span class="badge badge-brand">Level C (Soft)</span>';
+
+      const statusBadge = !c.is_supported
+        ? '<span class="badge badge-warning">Unsupported Policy</span>'
+        : c.is_ambiguous
+        ? '<span class="badge badge-warning">Ambiguous Entity</span>'
+        : '<span class="badge badge-success">Grounded &amp; Supported</span>';
+
+      const isChecked = c.is_supported && !c.is_ambiguous ? 'checked' : 'disabled';
+
+      constraintsHtml += `
+        <div style="padding: 10px; border: 1px solid var(--gray-200); border-radius: var(--radius-md); background: #ffffff; display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="ai-c-check-${idx}" data-idx="${idx}" ${isChecked} style="cursor: pointer;" />
+              <label for="ai-c-check-${idx}" style="font-weight: 600; font-size: var(--text-sm); cursor: pointer;">
+                ${c.target_name ? c.target_name : c.category.replace(/_/g, ' ').toUpperCase()}
+              </label>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              ${levelBadge}
+              ${statusBadge}
+            </div>
+          </div>
+          <p style="font-size: var(--text-xs); color: var(--gray-700); margin: 0;">${c.description}</p>
+          ${c.support_rationale ? `<p style="font-size: var(--text-xs); color: var(--orange-600); margin: 0; background: var(--orange-100); padding: 4px 8px; border-radius: 4px;">ℹ ${c.support_rationale}</p>` : ''}
+          ${c.clarification_needed ? `<p style="font-size: var(--text-xs); color: var(--warning-600); margin: 0;">⚠ ${c.clarification_needed}</p>` : ''}
+        </div>
+      `;
+    });
+
+    let clarificationsHtml = '';
+    if (data.clarifications && data.clarifications.length > 0) {
+      data.clarifications.forEach((q) => {
+        clarificationsHtml += `
+          <div class="alert alert-warning" style="margin-top: 8px; font-size: var(--text-xs);">
+            <strong>Clarification Required:</strong> ${q.message}
+            ${q.options && q.options.length > 0 ? `<div style="margin-top: 4px;">Suggestions: <em>${q.options.join(', ')}</em></div>` : ''}
+          </div>
+        `;
+      });
+    }
+
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div style="background: var(--gray-50); border: 1px solid var(--gray-300); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; color: var(--gray-600);">Interpreted Constraints (${data.constraints.length})</span>
+          <span class="badge ${data.can_apply ? 'badge-success' : 'badge-warning'}">${data.can_apply ? 'Ready to Apply' : 'Action Required'}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${constraintsHtml}
+        </div>
+        ${clarificationsHtml}
+        <div style="margin-top: 4px;">
+          <button
+            type="button"
+            class="btn btn-generate w-full"
+            id="btn-ai-apply-generate"
+            onclick="applyConfirmedConstraintsAndGenerate()"
+            ${!data.can_apply ? 'disabled' : ''}
+          >
+            <span>⚙ Apply Confirmed Constraints &amp; Solve</span>
+          </button>
+          <p class="form-hint" style="text-align: center; margin-top: 6px; font-size: var(--text-xs);">
+            Constraints will be passed to CP-SAT as hard bounds or soft weights and validated deterministically.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  async function applyConfirmedConstraintsAndGenerate() {
+    if (!_lastInterpretedResponse || !_lastInterpretedResponse.constraints) return;
+
+    const confirmed = [];
+    _lastInterpretedResponse.constraints.forEach((c, idx) => {
+      const checkbox = document.getElementById(`ai-c-check-${idx}`);
+      if (checkbox && checkbox.checked) {
+        confirmed.push(c);
+      }
+    });
+
+    if (confirmed.length === 0) {
+      showToast('No constraints were selected.', 'warning');
+      return;
+    }
+
+    _pendingConfirmedConstraints = confirmed;
+    showToast(`Injecting ${confirmed.length} AI-extracted constraint(s) into CP-SAT solver…`, 'info');
+    await triggerRealGeneration({ confirmed_constraints: confirmed });
+  }
+
+  async function explainActiveCandidate() {
+    if (!_currentCandidate && !_activeVersion) {
+      showToast('Select or generate a candidate version first.', 'warning');
+      return;
+    }
+
+    const versionId = _currentCandidate?.id || _activeVersion?.id;
+    const card = document.getElementById('ai-explanation-card');
+    const body = document.getElementById('ai-explanation-body');
+    const btn = document.getElementById('btn-ai-explain-results');
+
+    if (!card || !body) return;
+
+    card.style.display = 'block';
+    body.innerHTML = '<div style="display: flex; align-items: center; gap: 8px;"><span class="spinner">⟳</span> Generating grounded AI analysis…</div>';
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await window.EduPlusAPI.explainTimetable({
+        explanation_type: "generation",
+        version_id: versionId,
+      });
+
+      let insightsHtml = '';
+      if (res.key_insights && res.key_insights.length > 0) {
+        insightsHtml = `
+          <div style="margin-top: 10px;">
+            <strong style="font-size: var(--text-xs); color: var(--gray-700); text-transform: uppercase;">Key Insights:</strong>
+            <ul style="margin: 6px 0 0 18px; font-size: var(--text-xs); color: var(--gray-700); line-height: 1.5;">
+              ${res.key_insights.map(i => `<li>${i}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
+
+      let recsHtml = '';
+      if (res.actionable_recommendations && res.actionable_recommendations.length > 0) {
+        recsHtml = `
+          <div style="margin-top: 10px; background: var(--brand-50); border-left: 3px solid var(--brand-500); padding: 8px 12px; border-radius: 4px;">
+            <strong style="font-size: var(--text-xs); color: var(--brand-700); text-transform: uppercase;">Institutional Recommendations:</strong>
+            <ul style="margin: 6px 0 0 18px; font-size: var(--text-xs); color: var(--brand-900); line-height: 1.5;">
+              ${res.actionable_recommendations.map(r => `<li>${r}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
+
+      body.innerHTML = `
+        <div style="font-size: var(--text-sm); line-height: 1.5; color: var(--gray-800);">
+          ${res.summary_markdown.replace(/\n/g, '<br/>')}
+        </div>
+        ${insightsHtml}
+        ${recsHtml}
+        <div style="margin-top: 12px; font-size: 11px; color: var(--gray-500); text-align: right;">
+          Generated by: ${res.provider_used} (Grounded in solver telemetry &amp; validation rules)
+        </div>
+      `;
+    } catch (err) {
+      body.innerHTML = `<div class="alert alert-error" style="font-size: var(--text-sm);">Failed to generate AI explanation: ${err.message}</div>`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function runVersionComparisonWithAI() {
+    await runVersionComparison();
+
+    const vA = document.getElementById('compare-version-a')?.value;
+    const vB = document.getElementById('compare-version-b')?.value;
+    if (!vA || !vB || vA === vB) return;
+
+    const container = document.getElementById('ai-diff-container');
+    const body = document.getElementById('ai-diff-body');
+    if (!container || !body) return;
+
+    container.style.display = 'block';
+    body.innerHTML = '<div style="display: flex; align-items: center; gap: 8px;"><span class="spinner">⟳</span> AI analyzing schedule diff &amp; operational shifts…</div>';
+
+    try {
+      const res = await window.EduPlusAPI.explainTimetable({
+        explanation_type: "comparison",
+        version_a_id: vA,
+        version_b_id: vB,
+      });
+
+      let insightsHtml = '';
+      if (res.key_insights && res.key_insights.length > 0) {
+        insightsHtml = `
+          <ul style="margin: 6px 0 0 18px; font-size: var(--text-xs); color: var(--gray-700); line-height: 1.5;">
+            ${res.key_insights.map(i => `<li>${i}</li>`).join('')}
+          </ul>
+        `;
+      }
+
+      body.innerHTML = `
+        <div style="font-size: var(--text-sm); line-height: 1.5; color: var(--gray-800);">
+          ${res.summary_markdown.replace(/\n/g, '<br/>')}
+        </div>
+        ${insightsHtml}
+      `;
+    } catch (err) {
+      body.innerHTML = `<div class="alert alert-error" style="font-size: var(--text-sm);">AI comparison explanation failed: ${err.message}</div>`;
+    }
+  }
+
   // ─── INIT EXECUTION ─────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initOverview();
@@ -1226,4 +1526,13 @@
   window.selectCandidate = selectCandidate;
   window.simulateGenerate = simulateGenerate;
   window.simulatePublish = simulatePublish;
+
+  // Phase 5 AI Assistant bindings
+  window.setAIPrompt = setAIPrompt;
+  window.clearAIPrompt = clearAIPrompt;
+  window.interpretAIPrompt = interpretAIPrompt;
+  window.applyConfirmedConstraintsAndGenerate = applyConfirmedConstraintsAndGenerate;
+  window.explainActiveCandidate = explainActiveCandidate;
+  window.runVersionComparisonWithAI = runVersionComparisonWithAI;
+  window.checkAIStatus = checkAIStatus;
 })();

@@ -45,6 +45,11 @@ class Settings:
     PORT: int = int(os.getenv("PORT", "8000"))
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
+    # AI / LLM Configuration
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "auto")  # "auto", "gemini", "mock"
+
 
 settings = Settings()
 

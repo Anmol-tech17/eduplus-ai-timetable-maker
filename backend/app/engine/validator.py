@@ -86,6 +86,7 @@ def validate_timetable(
     violations += ctx.check_a08_teacher_unavailability()
     violations += ctx.check_a09_valid_working_slot()
     violations += ctx.check_a10_weekly_session_count()
+    violations += ctx.check_a11_blocked_practical_days()
 
     violations += ctx.check_b01_teacher_workload()
     violations += ctx.check_b02_consecutive_sessions()
@@ -375,6 +376,28 @@ class _ValidationContext:
                     suggestion=(
                         f"Schedule exactly {assignment.weekly_count} sessions for this assignment."
                     ),
+                ))
+        return violations
+
+    def check_a11_blocked_practical_days(self) -> List[ViolationRecord]:
+        """Check that no practical sessions are scheduled on coordinator/AI blocked practical days."""
+        violations = []
+        blocked_days = set(getattr(self.inp, "blocked_practical_days", []))
+        if not blocked_days:
+            return violations
+        for idx, s in enumerate(self.sessions):
+            if s.session_type == "practical" and s.day_name in blocked_days:
+                violations.append(ViolationRecord(
+                    rule_id="A11",
+                    level=ViolationLevel.A,
+                    severity="error",
+                    description=(
+                        f"A11: Practical session on {s.day_name} slot {s.slot_index} violates "
+                        f"blocked practical day rule for {s.day_name}."
+                    ),
+                    affected_session_ids=[str(idx)],
+                    affected_entity_ids=[s.assignment_id, s.room_id],
+                    suggestion=f"Reschedule practical session to a permitted laboratory day (not {s.day_name}).",
                 ))
         return violations
 

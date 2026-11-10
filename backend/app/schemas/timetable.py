@@ -27,6 +27,10 @@ class GenerationRequest(BaseModel):
     semester: int = Field(default=1, ge=1, le=2)
     time_limit_seconds: int = Field(default=60, ge=5, le=300)
     check_soft_constraints: bool = Field(default=True)
+    confirmed_constraints: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Optional list of user-confirmed constraints from AI NLP interpretation.",
+    )
 
 
 class SessionOut(BaseModel):

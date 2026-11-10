@@ -13,6 +13,7 @@ from backend.app.api.v1.subjects import router as subjects_router
 from backend.app.api.v1.teachers import router as teachers_router
 from backend.app.api.v1.rooms import router as rooms_router
 from backend.app.api.v1.timetable import router as timetable_router
+from backend.app.api.v1.ai import router as ai_router
 
 api_v1_router = APIRouter()
 
@@ -25,4 +26,5 @@ api_v1_router.include_router(subjects_router)
 api_v1_router.include_router(teachers_router)
 api_v1_router.include_router(rooms_router)
 api_v1_router.include_router(timetable_router)
+api_v1_router.include_router(ai_router)
 

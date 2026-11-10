@@ -158,6 +158,29 @@
     async getGenerationRun(runId) {
       return request(`/timetable/runs/${encodeURIComponent(runId)}`);
     },
+
+    // ─── Phase 5: AI Assistant & Grounded Explanations ───────────────────────
+    async getAIStatus() {
+      return request("/ai/status");
+    },
+
+    async interpretPrompt(prompt, departmentId = null, academicYearId = null) {
+      return request("/ai/interpret", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt,
+          department_id: departmentId,
+          academic_year_id: academicYearId,
+        }),
+      });
+    },
+
+    async explainTimetable(payload) {
+      return request("/ai/explain", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
   };
 
   window.EduPlusAPI = EduPlusAPI;

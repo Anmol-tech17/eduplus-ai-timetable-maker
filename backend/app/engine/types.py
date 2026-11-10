@@ -158,6 +158,10 @@ class SchedulingInput:
     assignments: List[TeachingAssignmentInfo]
     # Optional: pre-fixed sessions during repair
     pinned_sessions: List["ScheduledSessionInfo"] = field(default_factory=list)
+    # AI-injected / dynamic constraints
+    blocked_practical_days: List[str] = field(default_factory=list)
+    slot_preference_weight: int = 2
+    gap_penalty_weight: int = 3
 
 
 @dataclass

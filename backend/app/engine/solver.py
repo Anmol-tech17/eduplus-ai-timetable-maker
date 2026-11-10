@@ -226,6 +226,12 @@ class _CPSATEngine:
                         if s_i + 1 >= n_slots:
                             continue  # no room for 2 slots
 
+                    # Filter: practical day block (e.g. "avoid practicals on Monday")
+                    if assignment.session_type == "practical":
+                        blocked_days = getattr(self.inp, "blocked_practical_days", [])
+                        if day_name in blocked_days:
+                            continue
+
                     for room_id in self.rooms:
                         # Filter: practicals only in labs, lectures not in labs
                         room = self.room_map[room_id]
@@ -447,6 +453,7 @@ class _CPSATEngine:
     def _build_objective(self, X: dict) -> List:
         """Build weighted objective terms. Returns list of CP-SAT linear terms."""
         terms = []
+        w_prefer = getattr(self.inp, "slot_preference_weight", W_PREFER)
         teacher_preferred: Dict[str, Set[Tuple[str, int]]] = {}
         for teacher in self.inp.teachers:
             if teacher.preferred_slots:
@@ -467,7 +474,7 @@ class _CPSATEngine:
             # S1: preferred slot bonus
             if teacher_id in teacher_preferred:
                 if (day_name, slot_index) in teacher_preferred[teacher_id]:
-                    terms.append(W_PREFER * var)
+                    terms.append(w_prefer * var)
 
         return terms
 

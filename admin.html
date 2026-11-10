@@ -350,6 +350,79 @@
         <div class="grid grid-content">
           <!-- Left: controls -->
           <div>
+            <!-- Phase 5: AI Scheduling Assistant -->
+            <div class="card" style="margin-bottom: var(--sp-5); border: 1px solid var(--brand-200); box-shadow: 0 2px 8px rgba(29, 78, 216, 0.06);">
+              <div class="card-header" style="background: linear-gradient(180deg, #f8faff 0%, #ffffff 100%);">
+                <div>
+                  <div class="card-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span>✨ AI Scheduling Assistant</span>
+                    <span class="badge badge-brand" id="ai-status-badge">Checking...</span>
+                  </div>
+                  <div class="card-subtitle">Natural-language constraint extraction &amp; solver guidance</div>
+                </div>
+              </div>
+              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-3);">
+                <div class="form-group">
+                  <label class="form-label" for="ai-prompt-input" style="display: flex; justify-content: space-between;">
+                    <span>Coordinator Instruction</span>
+                    <span style="font-size: var(--text-xs); color: var(--gray-500); font-weight: normal;">English NLP grounded against DB</span>
+                  </label>
+                  <textarea
+                    class="form-input"
+                    id="ai-prompt-input"
+                    rows="3"
+                    style="resize: vertical; font-size: var(--text-sm); line-height: 1.4;"
+                    placeholder="e.g., Give Dr. Priya Sharma no classes after 2 PM and avoid scheduling practicals on Monday"
+                  ></textarea>
+                </div>
+
+                <!-- Sample prompt chips -->
+                <div>
+                  <div style="font-size: var(--text-xs); color: var(--gray-600); font-weight: 600; margin-bottom: 6px;">
+                    Suggested Institutional Prompts:
+                  </div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="ai-prompt-chips">
+                    <button type="button" class="badge badge-neutral" style="cursor: pointer; padding: 4px 8px; border: 1px solid var(--gray-300);" onclick="setAIPrompt('Give Dr. Priya Sharma no classes after 2 PM')">
+                      🕒 Dr. Priya: No classes after 2 PM
+                    </button>
+                    <button type="button" class="badge badge-neutral" style="cursor: pointer; padding: 4px 8px; border: 1px solid var(--gray-300);" onclick="setAIPrompt('Avoid scheduling practicals on Monday')">
+                      🔬 Avoid Practicals on Monday
+                    </button>
+                    <button type="button" class="badge badge-neutral" style="cursor: pointer; padding: 4px 8px; border: 1px solid var(--gray-300);" onclick="setAIPrompt('Prefer morning slots and minimize idle gaps between lectures')">
+                      🌅 Morning Slots &amp; Fewer Gaps
+                    </button>
+                    <button type="button" class="badge badge-neutral" style="cursor: pointer; padding: 4px 8px; border: 1px solid var(--gray-300);" onclick="setAIPrompt('Limit teaching load to maximum 2 consecutive lectures')">
+                      ⏱ Limit Consecutive Lectures
+                    </button>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: var(--sp-2); margin-top: 4px;">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    id="btn-ai-interpret"
+                    onclick="interpretAIPrompt()"
+                    style="flex: 1;"
+                  >
+                    <span>✨ Interpret with AI</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="clearAIPrompt()"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <!-- Interpretation Preview & Confirmation Area -->
+                <div id="ai-preview-container" style="display: none; margin-top: var(--sp-2);">
+                  <!-- Dynamically populated -->
+                </div>
+              </div>
+            </div>
+
             <!-- Solver parameters -->
             <div class="card" style="margin-bottom: var(--sp-5);">
               <div class="card-header">
@@ -419,6 +492,31 @@
               <div class="card-body" id="validation-body">
                 <!-- Populated by JS -->
               </div>
+            </div>
+
+            <!-- AI Grounded Explanation -->
+            <div class="card" id="ai-explanation-card" style="margin-bottom: var(--sp-5); border: 1px solid var(--brand-200); display: none;">
+              <div class="card-header" style="background: linear-gradient(180deg, #f8faff 0%, #ffffff 100%); display: flex; justify-content: space-between; align-items: center;">
+                <div class="card-title" style="display: flex; align-items: center; gap: 8px;">
+                  <span>💡 AI Schedule Analysis &amp; Insights</span>
+                </div>
+                <span class="badge badge-brand">Grounded</span>
+              </div>
+              <div class="card-body" id="ai-explanation-body">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- AI Explanation Trigger Button -->
+            <div style="margin-bottom: var(--sp-4);">
+              <button
+                class="btn btn-secondary w-full"
+                id="btn-ai-explain-results"
+                onclick="explainActiveCandidate()"
+                style="display: flex; align-items: center; justify-content: center; gap: 8px;"
+              >
+                <span>💡 Explain Solution &amp; Violations with AI</span>
+              </button>
             </div>
 
             <!-- Publish gate -->
@@ -532,6 +630,9 @@
                 <button class="btn btn-primary" id="btn-run-compare" onclick="runVersionComparison()">
                   ⚖ Compare Versions
                 </button>
+                <button class="btn btn-secondary" id="btn-run-ai-compare" onclick="runVersionComparisonWithAI()" style="margin-left: 8px;">
+                  💡 Explain with AI
+                </button>
               </div>
             </div>
           </div>
@@ -566,6 +667,19 @@
               <div class="stat-value" id="diff-unchanged-count">0</div>
               <div class="stat-label">Unchanged Sessions</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Phase 5: AI Version Diff Explanation -->
+        <div class="card" id="ai-diff-container" style="margin-bottom: var(--sp-5); border: 1px solid var(--brand-200); display: none;">
+          <div class="card-header" style="background: linear-gradient(180deg, #f8faff 0%, #ffffff 100%); display: flex; justify-content: space-between; align-items: center;">
+            <div class="card-title" style="display: flex; align-items: center; gap: 8px;">
+              <span>💡 AI Schedule Evolution Analysis</span>
+            </div>
+            <span class="badge badge-brand">Audit Insight</span>
+          </div>
+          <div class="card-body" id="ai-diff-body">
+            <!-- Populated by JS -->
           </div>
         </div>
 

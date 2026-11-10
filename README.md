@@ -1,7 +1,7 @@
 # EduPlus AI Timetable Maker
 
-> **Version:** 0.4.0 (Phase 4 Complete)  
-> **Status:** Production-ready backend & integrated frontend — Live CP-SAT scheduling, PostgreSQL persistence, versioning & diffing  
+> **Version:** 0.5.0 (Phase 5 Complete)  
+> **Status:** Production-ready backend & integrated frontend — Live CP-SAT scheduling, PostgreSQL persistence, versioning & diffing, Natural-Language AI Assistant  
 > **Department:** AIML — Example Engineering College  
 > **Date:** October 2026 – November 2026
 
@@ -11,7 +11,7 @@
 
 EduPlus AI Timetable Maker is an enterprise academic timetable management and constraint optimization platform developed for educational institutions. The system models multi-department, multi-year cohorts with divisions, laboratory batches, teacher availability, room suitability, and elective enrollment groups.
 
-Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a decoupled **independent validator**, a **FastAPI backend** running on dedicated PostgreSQL, and an **integrated web interface**, EduPlus automates the generation, auditing, versioning, comparison, and localized repair of institutional schedules.
+Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a decoupled **independent validator**, a **FastAPI backend** running on dedicated PostgreSQL, an **integrated web interface**, and an **AI Natural-Language Scheduling Assistant**, EduPlus automates the generation, auditing, versioning, comparison, localized repair, and natural-language constraint interpretation for institutional schedules.
 
 ---
 
@@ -20,18 +20,18 @@ Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a dec
 | Component | Status | Details |
 |-----------|--------|---------|
 | Login page | ✅ Implemented | Prototype UI + real backend user hashing (pbkdf2-sha256) |
-| Admin dashboard | ✅ Implemented & Integrated | Live CP-SAT generation, validation results, version dropdowns, comparison diffs, localized repair |
+| Admin dashboard | ✅ Implemented & Integrated | Live CP-SAT generation, validation results, version dropdowns, comparison diffs, localized repair, AI Scheduling Assistant |
 | Teacher dashboard | ✅ Implemented & Integrated | Live timetable view filtered to assigned faculty sessions + local fallback |
 | Student dashboard | ✅ Implemented & Integrated | Live timetable view filtered to division, batch, and elective groups + local fallback |
 | API Service Layer | ✅ Complete | REST client (`src/js/api.js`) connecting frontend to FastAPI backend endpoints |
 | CSS design system | ✅ Complete | Institutional white background, primary blue highlights, secondary orange accents |
 | PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 26 physical tables via Alembic `5cc27eb93e43` |
-| FastAPI backend | ✅ Implemented | 33 endpoints (Health, Academic CRUD, Generation, Validation, Versioning, Compare, Repair, Runs) |
-| CP-SAT scheduler | ✅ Implemented | Google OR-Tools 9.15 integer programming formulation with hard/soft constraints |
+| FastAPI backend | ✅ Implemented | 36 endpoints (Health, Academic CRUD, Generation, Validation, Versioning, Compare, Repair, Runs, AI Assistant) |
+| CP-SAT scheduler | ✅ Implemented | Google OR-Tools 9.15 integer programming formulation with hard/soft constraints & dynamic AI injection |
 | Independent validator | ✅ Implemented | Standalone rule engine (Level A hard, Level B policy, Level C soft preferences) |
 | Timetable versioning | ✅ Implemented | Version tracking, session diffing (`/timetable/compare`), audit runs, publish lifecycle |
 | Localized repair mode | ✅ Implemented | Pinned session preservation and localized re-optimization (`/timetable/repair`) |
-| ML / LLM query service | 🔲 Planned | Phase 5 natural language explanation & query handling |
+| AI Assistant & NLP Scheduling | ✅ Implemented | Natural language prompt interpretation, database entity grounding, CP-SAT constraint injection, grounded result & diff explanations (Mock + Gemini) |
 
 ---
 
@@ -204,7 +204,7 @@ EduPlus AI Timetable Maker/
 
 ## Tests
 
-A comprehensive 63-test automated test suite is implemented across:
+A comprehensive 72-test automated test suite is implemented across:
 - **Database & Dialect:** `backend/tests/test_db_connection.py`
 - **Domain Models & Constraints:** `backend/tests/test_models.py`
 - **Institutional Seeding:** `backend/tests/test_seed.py`
@@ -212,10 +212,14 @@ A comprehensive 63-test automated test suite is implemented across:
 - **System Health:** `backend/tests/test_health.py`
 - **Validator & CP-SAT Engine:** `backend/tests/test_engine.py` (30 tests: hard/policy/soft rules, capacity, multi-slot practicals, infeasibility, solver timeouts)
 - **Timetable Lifecycle APIs:** `backend/tests/test_timetable_api.py` (21 tests: generation, persistence, versioning, comparison, localized repair, run diagnostics, publish lifecycle)
+- **AI Assistant & NLP Constraints:** `backend/tests/test_ai_assistant.py` (9 tests: NLP interpretation, DB grounding, hard/soft classification, ambiguous entity clarification, unsupported policies, solver constraint injection, grounded explanations)
 
 ```bash
 # Run the entire test suite
 python -m pytest backend/tests -v
+
+# Run AI assistant tests only
+python -m pytest backend/tests/test_ai_assistant.py -v
 
 # Run engine tests only
 python -m pytest backend/tests/test_engine.py -v
@@ -223,6 +227,20 @@ python -m pytest backend/tests/test_engine.py -v
 # Run timetable API tests only
 python -m pytest backend/tests/test_timetable_api.py -v
 ```
+
+---
+
+## Phase 5: AI Assistant & Natural-Language Scheduling
+
+EduPlus follows a strict **hybrid AI + optimization architecture**:
+- **LLM Responsibilities:** Understand natural-language scheduling requests, extract user constraints, disambiguate entity references against active PostgreSQL records, explain solver diagnostics, and summarize version diffs.
+- **CP-SAT Solver Responsibilities:** The mathematical constraint solver alone places sessions into the timetable and proves feasibility. The LLM never hallucinates schedules.
+- **Independent Validator Responsibilities:** Evaluates candidate timetables against Level A (Hard), Level B (Policy), and Level C (Preference) constraints. Sole authority for publication clearance.
+
+### Available AI Endpoints
+- `POST /api/v1/ai/interpret`: Parse natural language prompt into structured, validated constraints (`teacher_unavailability`, `practical_block`, `teacher_preference`, `gap_minimization`, `consecutive_limit`).
+- `POST /api/v1/ai/explain`: Generate human-readable Markdown explanations and institutional recommendations for solver outcomes, validator violations, and version diffs.
+- `GET /api/v1/ai/status`: Report active provider name (`mock` or `gemini`), model, availability, and supported constraint types.
 
 ---
 
