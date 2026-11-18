@@ -1,41 +1,72 @@
 """
 backend/app/api/deps.py
-EduPlus AI Timetable Maker — Shared API, Authentication & RBAC Dependencies
+EduPlus AI Timetable Maker — Shared API, Multi-Worker Auth, Cookie/CSRF & RBAC Dependencies
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from backend.app.core.security import decode_access_token, token_revocation_store
+from backend.app.core.security import (
+    ACCESS_COOKIE_NAME,
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
+    decode_access_token,
+    is_token_revoked_db,
+    verify_csrf_token,
+)
 from backend.app.db.session import get_db
 from backend.app.models.security import UserAccount
 
 bearer_scheme = HTTPBearer(auto_error=False)
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> UserAccount:
     """
-    Validate Bearer JWT access token, check server-side revocation,
-    verify active UserAccount, and return the authenticated user.
+    Authenticate user via Authorization Bearer JWT OR HttpOnly access cookie.
+    - When authenticated via HttpOnly cookie on a mutating request, enforces
+      double-submit CSRF header validation (X-CSRF-Token == eduplus_csrf_token).
+    - Validates signature, expiry, token type, persistent DB revocation, and active status.
     """
-    if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
+    token: Optional[str] = None
+    auth_via_cookie = False
+
+    if credentials is not None and credentials.scheme.lower() == "bearer" and credentials.credentials:
+        token = credentials.credentials
+    else:
+        cookie_token = request.cookies.get(ACCESS_COOKIE_NAME)
+        if cookie_token:
+            token = cookie_token
+            auth_via_cookie = True
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = credentials.credentials
+    # CSRF protection for cookie-authenticated state-changing requests
+    if auth_via_cookie and request.method.upper() in _MUTATING_METHODS:
+        csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+        csrf_header = request.headers.get(CSRF_HEADER_NAME)
+        if not verify_csrf_token(csrf_cookie, csrf_header):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="CSRF validation failed.",
+            )
+
     try:
         payload = decode_access_token(token)
     except jwt.ExpiredSignatureError:
@@ -52,7 +83,7 @@ def get_current_user(
         )
 
     jti = payload.get("jti")
-    if not jti or token_revocation_store.is_revoked(jti):
+    if not jti or is_token_revoked_db(db, jti):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked. Please sign in again.",

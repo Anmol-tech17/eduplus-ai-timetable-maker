@@ -18,9 +18,27 @@
     }
   }
 
-  function setStoredAuth(token, user) {
+  function getStoredRefreshToken() {
+    try {
+      return sessionStorage.getItem("eduplus_refresh_token") || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getCookie(name) {
+    try {
+      const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+      return match ? decodeURIComponent(match[1]) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setStoredAuth(token, user, refreshToken = null) {
     try {
       if (token) sessionStorage.setItem("eduplus_token", token);
+      if (refreshToken) sessionStorage.setItem("eduplus_refresh_token", refreshToken);
       if (user) {
         const normalized = {
           ...user,
@@ -28,18 +46,52 @@
         };
         sessionStorage.setItem("eduplus_user", JSON.stringify(normalized));
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function clearStoredAuth() {
     try {
       sessionStorage.removeItem("eduplus_token");
+      sessionStorage.removeItem("eduplus_refresh_token");
       sessionStorage.removeItem("eduplus_user");
-    } catch (_) {}
+    } catch (_) { }
+  }
+
+  let _refreshInFlight = null;
+
+  async function tryRefreshSession() {
+    if (_refreshInFlight) return _refreshInFlight;
+    _refreshInFlight = (async () => {
+      try {
+        const rt = getStoredRefreshToken();
+        const csrf = getCookie("eduplus_csrf_token");
+        const headers = { "Content-Type": "application/json" };
+        if (csrf) headers["X-CSRF-Token"] = csrf;
+        const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify(rt ? { refresh_token: rt } : {}),
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (data && data.access_token) {
+          setStoredAuth(data.access_token, data.user, data.refresh_token);
+          return true;
+        }
+        return false;
+      } catch (_) {
+        return false;
+      } finally {
+        _refreshInFlight = null;
+      }
+    })();
+    return _refreshInFlight;
   }
 
   async function request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
+    const method = (options.method || "GET").toUpperCase();
     const headers = {
       "Content-Type": "application/json",
       ...(options.headers || {}),
@@ -50,9 +102,42 @@
       headers["Authorization"] = `Bearer ${token}`;
     }
 
+    // Attach double-submit CSRF token on mutating requests when cookie auth is active
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      const csrf = getCookie("eduplus_csrf_token");
+      if (csrf && !headers["X-CSRF-Token"]) {
+        headers["X-CSRF-Token"] = csrf;
+      }
+    }
+
+    const timeoutMs = options.timeoutMs || (endpoint.includes("/timetable/generate") || endpoint.includes("/timetable/repair") ? 120000 : 20000);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      const response = await fetch(url, { ...options, headers });
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: "include",
+        signal: controller.signal,
+      });
+
       if (!response.ok) {
+        // Attempt single transparent refresh on expired access token
+        if (
+          response.status === 401 &&
+          !options.skipAuth &&
+          !options._retried &&
+          endpoint !== "/auth/login" &&
+          endpoint !== "/auth/refresh" &&
+          endpoint !== "/auth/logout"
+        ) {
+          const refreshed = await tryRefreshSession();
+          if (refreshed) {
+            return request(endpoint, { ...options, _retried: true });
+          }
+        }
+
         let errMessage = `HTTP Error ${response.status}`;
         try {
           const errorData = await response.json();
@@ -64,9 +149,8 @@
           } else if (errorData.message) {
             errMessage = errorData.message;
           }
-        } catch (_) {}
+        } catch (_) { }
 
-        // Handle expired or revoked session on protected routes
         if (response.status === 401 && !options.skipAuth && endpoint !== "/auth/login") {
           clearStoredAuth();
           if (!window.location.pathname.endsWith("index.html") && window.location.pathname !== "/") {
@@ -82,10 +166,17 @@
       if (response.status === 204) return null;
       return await response.json();
     } catch (err) {
+      if (err.name === "AbortError") {
+        const timeoutErr = new Error("Request timed out. The server took too long to respond.");
+        timeoutErr.status = 408;
+        throw timeoutErr;
+      }
       if (err.name === "TypeError" && err.message.includes("fetch")) {
         console.warn(`[EduPlus API] Network error connecting to ${url}: ${err.message}`);
       }
       throw err;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -97,19 +188,23 @@
 
     // ─── System & Connectivity ──────────────────────────────────────────────
     async getHealth() {
-      return request("/health", { skipAuth: true });
+      return request("/health", { skipAuth: true, timeoutMs: 5000 });
+    },
+
+    async getReadiness() {
+      return request("/health/ready", { skipAuth: true, timeoutMs: 5000 });
     },
 
     async isBackendLive() {
       try {
-        const res = await request("/health", { skipAuth: true });
+        const res = await request("/health", { skipAuth: true, timeoutMs: 5000 });
         return res && res.status === "healthy";
       } catch (_) {
         return false;
       }
     },
 
-    // ─── Phase 6: Authentication ────────────────────────────────────────────
+    // ─── Phase 6 & 7: Authentication & Refresh Rotation ─────────────────────
     async login(email, password) {
       const data = await request("/auth/login", {
         method: "POST",
@@ -117,15 +212,19 @@
         body: JSON.stringify({ email, password }),
       });
       if (data && data.access_token) {
-        setStoredAuth(data.access_token, data.user);
+        setStoredAuth(data.access_token, data.user, data.refresh_token);
       }
       return data;
     },
 
     async logout() {
       try {
-        if (getStoredToken()) {
-          await request("/auth/logout", { method: "POST" });
+        const rt = getStoredRefreshToken();
+        if (getStoredToken() || rt) {
+          await request("/auth/logout", {
+            method: "POST",
+            body: JSON.stringify(rt ? { refresh_token: rt } : {}),
+          });
         }
       } catch (_) {
         // Always clear local session even if server unreachable
@@ -196,6 +295,13 @@
     // ─── Timetable Generation, Approvals & Lifecycle ────────────────────────
     async generateTimetable(payload) {
       return request("/timetable/generate", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async generateTimetableAsync(payload) {
+      return request("/timetable/generate/async", {
         method: "POST",
         body: JSON.stringify(payload),
       });

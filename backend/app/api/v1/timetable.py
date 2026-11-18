@@ -67,6 +67,7 @@ from backend.app.schemas.timetable import (
     ViolationOut,
 )
 from backend.app.services.audit import record_audit_event
+from backend.app.services.job_runner import generation_job_manager
 
 router = APIRouter(prefix="/timetable", tags=["Timetable"])
 
@@ -951,6 +952,50 @@ def repair_timetable(
 
 
 # ---------------------------------------------------------------------------
+# Asynchronous Background Generation (Non-Blocking)
+# ---------------------------------------------------------------------------
+
+@router.post("/generate/async", status_code=status.HTTP_202_ACCEPTED)
+def generate_timetable_async(
+    payload: GenerationRequest,
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
+    db: Session = Depends(get_db),
+):
+    """
+    Enqueue a non-blocking background CP-SAT timetable generation job.
+    Prevents duplicate concurrent runs for the same department (409 Conflict).
+    Clients poll GET /api/v1/timetable/runs/{run_id} for progress and resulting version_id.
+    """
+    assert_department_access(current_user, payload.department_id)
+    dept_id = str(payload.department_id)
+    ay_ids = [str(x) for x in payload.academic_year_ids] if payload.academic_year_ids else None
+
+    try:
+        run = generation_job_manager.submit_generation_job(
+            db=db,
+            department_id=dept_id,
+            academic_year_ids=ay_ids,
+            label=payload.label,
+            academic_year_code=payload.academic_year_code,
+            semester=payload.semester,
+            time_limit_seconds=payload.time_limit_seconds,
+            check_soft_constraints=payload.check_soft_constraints,
+            confirmed_constraints=payload.confirmed_constraints,
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    return {
+        "run_id": str(run.id),
+        "status": run.status,
+        "poll_url": f"/api/v1/timetable/runs/{run.id}",
+        "started_at": run.started_at,
+        "message": "Timetable generation job queued on background solver worker.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Generation run status
 # ---------------------------------------------------------------------------
 
@@ -960,10 +1005,29 @@ def get_generation_run(
     current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
     db: Session = Depends(get_db),
 ):
-    """Get generation run metadata and solver diagnostics (Admin & Coordinator only)."""
+    """Get generation run metadata, progress status, solver diagnostics, and resulting version_id."""
     run = db.query(GenerationRun).filter(GenerationRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Generation run not found.")
+
+    # Enforce department scope if snapshot or version specifies a department
+    if run.input_snapshot and isinstance(run.input_snapshot.data, dict):
+        snap_dept = run.input_snapshot.data.get("department_id")
+        if snap_dept:
+            try:
+                assert_department_access(current_user, uuid.UUID(str(snap_dept)))
+            except ValueError:
+                pass
+
+    linked_version = (
+        db.query(TimetableVersion)
+        .filter(TimetableVersion.generation_run_id == run.id)
+        .order_by(TimetableVersion.created_at.desc())
+        .first()
+    )
+    if linked_version:
+        assert_department_access(current_user, linked_version.department_id)
+
     return {
         "id": str(run.id),
         "status": run.status,
@@ -972,6 +1036,8 @@ def get_generation_run(
         "started_at": run.started_at,
         "finished_at": run.finished_at,
         "notes": run.notes,
+        "version_id": str(linked_version.id) if linked_version else None,
+        "version_status": linked_version.status if linked_version else None,
     }
 
 

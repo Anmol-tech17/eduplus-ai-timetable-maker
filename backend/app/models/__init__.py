@@ -40,6 +40,8 @@ from backend.app.models.security import (
     UserAccount,
     AuditLog,
     TeacherRequest,
+    RevokedToken,
+    LoginAttempt,
 )
 
 __all__ = [
@@ -69,5 +71,7 @@ __all__ = [
     "UserAccount",
     "AuditLog",
     "TeacherRequest",
+    "RevokedToken",
+    "LoginAttempt",
 ]
 

@@ -86,3 +86,35 @@ class TeacherRequest(Base):
 
     teacher = relationship("Teacher")
     department = relationship("Department")
+
+
+class RevokedToken(Base):
+    """
+    Persistent JWT revocation table shared across all application workers.
+    Replaces single-process in-memory revocation so logout and refresh-token
+    rotation remain consistent across restarts and multi-worker deployments.
+    """
+    __tablename__ = "revoked_tokens"
+
+    jti = Column(String(64), primary_key=True)
+    user_id = Column(Uuid, ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=True, index=True)
+    token_type = Column(String(16), nullable=False, default="access")  # 'access' | 'refresh'
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class LoginAttempt(Base):
+    """
+    Persistent failed-login sliding window table shared across application workers.
+    Prevents brute-force login bypass across multi-worker / load-balanced instances.
+    """
+    __tablename__ = "login_attempts"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    rate_key = Column(String(255), nullable=False, index=True)
+    attempted_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_login_attempts_key_time", "rate_key", "attempted_at"),
+    )
+

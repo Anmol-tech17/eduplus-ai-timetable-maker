@@ -118,11 +118,13 @@ class _CPSATEngine:
         self.slots: List[int] = sorted(ts.slot_index for ts in inp.time_slots)
         self.rooms: List[str] = [r.id for r in inp.rooms]
 
-        # Lookup maps
+        # Lookup maps (O(1) access during CP-SAT model construction)
         self.room_map = {r.id: r for r in inp.rooms}
         self.teacher_map = {t.id: t for t in inp.teachers}
         self.division_map = {d.id: d for d in inp.divisions}
         self.batch_map = {b.id: b for b in inp.batches}
+        self.assignment_map: Dict[str, TeachingAssignmentInfo] = {a.id: a for a in inp.assignments}
+        self._vars_by_assignment: Dict[str, List[cp_model.IntVar]] = defaultdict(list)
 
         self.day_idx: Dict[str, int] = {d: i for i, d in enumerate(self.days)}
         self.slot_idx_map: Dict[int, int] = {s: i for i, s in enumerate(self.slots)}
@@ -257,6 +259,7 @@ class _CPSATEngine:
                             var = self.model.NewBoolVar(f"X_{assignment.id[:8]}_{d_i}_{s_i}_{room_id[:8]}")
 
                         X[key] = var
+                        self._vars_by_assignment[assignment.id].append(var)
 
     def _group_size(self, assignment: TeachingAssignmentInfo) -> int:
         """Return the headcount of the target group for capacity checking."""
@@ -345,22 +348,20 @@ class _CPSATEngine:
     def _h1_assignment_count(self, X: dict) -> None:
         """H1: each assignment is scheduled exactly weekly_count times."""
         for assignment in self.inp.assignments:
-            all_vars = self._vars_for(X, assignment)
+            all_vars = self._vars_by_assignment.get(assignment.id, [])
             # Add constraint regardless of whether all_vars is empty.
             # If all_vars is empty, Sum([]) == 0 != weekly_count, correctly making the model INFEASIBLE.
             self.model.Add(cp_model.LinearExpr.Sum(all_vars) == assignment.weekly_count)
 
     def _h2_teacher_no_overlap(self, X: dict) -> None:
         """H2: teacher teaches at most 1 session per (day, slot)."""
-        # Group by teacher
         teacher_vars: Dict[str, Dict[Tuple[int, int], List[cp_model.IntVar]]] = defaultdict(lambda: defaultdict(list))
         for key, var in X.items():
             a_id, d_i, s_i, room_id = key
-            assignment = next((a for a in self.inp.assignments if a.id == a_id), None)
+            assignment = self.assignment_map.get(a_id)
             if assignment is None:
                 continue
             teacher_id = assignment.teacher_id
-            # For duration 2, teacher occupies (d_i, s_i) and (d_i, s_i+1)
             teacher_vars[teacher_id][(d_i, s_i)].append(var)
             if assignment.duration_slots == 2:
                 teacher_vars[teacher_id][(d_i, s_i + 1)].append(var)
@@ -375,7 +376,7 @@ class _CPSATEngine:
         room_vars: Dict[str, Dict[Tuple[int, int], List[cp_model.IntVar]]] = defaultdict(lambda: defaultdict(list))
         for key, var in X.items():
             a_id, d_i, s_i, room_id = key
-            assignment = next((a for a in self.inp.assignments if a.id == a_id), None)
+            assignment = self.assignment_map.get(a_id)
             if assignment is None:
                 continue
             room_vars[room_id][(d_i, s_i)].append(var)
@@ -392,11 +393,10 @@ class _CPSATEngine:
         div_vars: Dict[str, Dict[Tuple[int, int], List[cp_model.IntVar]]] = defaultdict(lambda: defaultdict(list))
         for key, var in X.items():
             a_id, d_i, s_i, room_id = key
-            assignment = next((a for a in self.inp.assignments if a.id == a_id), None)
+            assignment = self.assignment_map.get(a_id)
             if assignment is None:
                 continue
             if assignment.batch_id is None and assignment.enrollment_group_id is None:
-                # Division-level session
                 div_vars[assignment.division_id][(d_i, s_i)].append(var)
                 if assignment.duration_slots == 2:
                     div_vars[assignment.division_id][(d_i, s_i + 1)].append(var)
@@ -411,7 +411,7 @@ class _CPSATEngine:
         batch_vars: Dict[str, Dict[Tuple[int, int], List[cp_model.IntVar]]] = defaultdict(lambda: defaultdict(list))
         for key, var in X.items():
             a_id, d_i, s_i, room_id = key
-            assignment = next((a for a in self.inp.assignments if a.id == a_id), None)
+            assignment = self.assignment_map.get(a_id)
             if assignment is None:
                 continue
             if assignment.batch_id is not None:
@@ -425,7 +425,7 @@ class _CPSATEngine:
                     self.model.Add(cp_model.LinearExpr.Sum(vars_list) <= 1)
 
     def _h7_teacher_unavailability(self, X: dict) -> None:
-        """H7: block teacher unavailable (day, slot) combinations."""
+        """H7: block teacher unavailable (day, slot) combinations (including 2nd slot of practicals)."""
         teacher_unavail: Dict[str, Set[Tuple[str, int]]] = defaultdict(set)
         for teacher in self.inp.teachers:
             for slot in teacher.unavailable_slots:
@@ -436,14 +436,17 @@ class _CPSATEngine:
 
         for key, var in X.items():
             a_id, d_i, s_i, room_id = key
-            assignment = next((a for a in self.inp.assignments if a.id == a_id), None)
+            assignment = self.assignment_map.get(a_id)
             if assignment is None:
                 continue
             teacher_id = assignment.teacher_id
             if teacher_id in teacher_unavail:
                 day_name = self.days[d_i]
                 slot_index = self.slots[s_i]
-                if (day_name, slot_index) in teacher_unavail[teacher_id]:
+                blocked = (day_name, slot_index) in teacher_unavail[teacher_id]
+                if not blocked and assignment.duration_slots == 2 and s_i + 1 < len(self.slots):
+                    blocked = (day_name, self.slots[s_i + 1]) in teacher_unavail[teacher_id]
+                if blocked:
                     self.model.Add(var == 0)
 
     # ------------------------------------------------------------------
@@ -463,7 +466,7 @@ class _CPSATEngine:
 
         for key, var in X.items():
             a_id, d_i, s_i, room_id = key
-            assignment = next((a for a in self.inp.assignments if a.id == a_id), None)
+            assignment = self.assignment_map.get(a_id)
             if assignment is None:
                 continue
 

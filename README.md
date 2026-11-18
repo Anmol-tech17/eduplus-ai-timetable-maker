@@ -1,7 +1,7 @@
 # EduPlus AI Timetable Maker
 
-> **Version:** 0.6.0 (Phase 6 Complete)  
-> **Status:** Role-secured backend & frontend — JWT Authentication, RBAC, Institutional Data Isolation, Approval Workflows, Audit Logging, CP-SAT Scheduling & AI Assistant  
+> **Version:** 0.7.0 (Phase 7 Complete)  
+> **Status:** Pilot-ready with hardened backend & deployment stack — Multi-Worker Persistent Auth/CSRF, Refresh Rotation, Async Background Solver, Scale Benchmarks, Readiness Probes, Docker/Nginx Deployment & Backup/Restore Verification  
 > **Department:** AIML — Example Engineering College  
 > **Date:** October 2026 – November 2026
 
@@ -19,14 +19,15 @@ Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a dec
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Login & Session Auth | ✅ Implemented | PBKDF2-SHA256 salted password hashing, signed HS256 JWT access tokens, server-side logout revocation, brute-force rate limiting |
-| Admin & Coordinator Dashboard | ✅ Implemented & Integrated | Role-aware navigation, CP-SAT generation, approval workflow (Submit/Approve/Reject/Publish), AI Assistant, User Management & Audit Logs (Admin only) |
+| Login & Session Auth | ✅ Implemented | PBKDF2-SHA256 salted password hashing, HS256 JWT access + refresh rotation, HttpOnly/Secure/SameSite + CSRF cookies, PostgreSQL-backed multi-worker revocation & rate limiting |
+| Admin & Coordinator Dashboard | ✅ Implemented & Integrated | Role-aware navigation, CP-SAT generation (sync + async), approval workflow (Submit/Approve/Reject/Publish), AI Assistant, User Management & Audit Logs (Admin only) |
 | Teacher Dashboard | ✅ Implemented & Integrated | Published-only timetable filtered strictly to own sessions + live availability/schedule request submission |
 | Student Dashboard | ✅ Implemented & Integrated | Published-only timetable filtered strictly to own division & batches |
-| API Service Layer | ✅ Complete | REST client (`src/js/api.js`) attaching Bearer JWT tokens, handling 401 session expiry, and wrapping all Phase 0–6 endpoints |
-| CSS design system | ✅ Complete | Institutional white background, primary blue highlights, secondary orange accents |
-| PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 27 physical tables via Alembic `a7f3c91e2b14` |
-| FastAPI backend | ✅ Implemented | 50+ RBAC-protected endpoints (Auth, Users, Audit, Requests, Academic CRUD, Generation, Validation, Approvals, Versioning, Compare, Repair, AI Assistant) |
+| API Service Layer | ✅ Complete | REST client (`src/js/api.js`) with Bearer/cookie+CSRF support, auto-refresh on 401, request timeouts (`AbortController`) |
+| CSS design system | ✅ Complete | Institutional white background, primary blue highlights, secondary orange accents, responsive overflow safeguards |
+| PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 29 physical tables via Alembic `c4e8a12f9b03`, backup/restore verified |
+| FastAPI backend | ✅ Implemented | 52+ RBAC-protected endpoints including `/health/ready`, `/auth/refresh`, `/timetable/generate/async`, structured logs & `X-Request-ID` |
+| Deployment & Operations | ✅ Prepared | `.env.production.example`, `Dockerfile`, `docker-compose.yml`, `deploy/nginx.conf`, [`docs/DEPLOYMENT_AND_OPERATIONS.md`](docs/DEPLOYMENT_AND_OPERATIONS.md) |
 | CP-SAT scheduler | ✅ Implemented | Google OR-Tools 9.15 integer programming formulation with hard/soft constraints & dynamic AI injection |
 | Independent validator | ✅ Implemented | Standalone rule engine (Level A hard, Level B policy, Level C soft preferences) |
 | Approval & Publication Workflow | ✅ Implemented | Controlled lifecycle (`candidate` → `pending_approval` → `approved`/`rejected` → `published` → `archived`), hard-violation gate, configurable approver permission |
@@ -205,7 +206,7 @@ EduPlus AI Timetable Maker/
 
 ## Tests
 
-A comprehensive 92-test automated test suite is implemented across:
+A comprehensive 106-test automated test suite is implemented across:
 - **Database & Dialect:** `backend/tests/test_db_connection.py`
 - **Domain Models & Constraints:** `backend/tests/test_models.py`
 - **Institutional Seeding:** `backend/tests/test_seed.py`
@@ -215,20 +216,18 @@ A comprehensive 92-test automated test suite is implemented across:
 - **Timetable Lifecycle APIs:** `backend/tests/test_timetable_api.py` (21 tests: generation, persistence, versioning, comparison, localized repair, run diagnostics, publish lifecycle)
 - **AI Assistant & NLP Constraints:** `backend/tests/test_ai_assistant.py` (9 tests: NLP interpretation, DB grounding, hard/soft classification, ambiguous entity clarification, unsupported policies, solver constraint injection, grounded explanations)
 - **Authentication, RBAC, Isolation, Approvals & Audit:** `backend/tests/test_auth_rbac.py` (20 tests: login/logout, password hashing, expired/tampered/revoked tokens, brute-force rate limiting, role permissions, IDOR isolation, approval/rejection/publication lifecycle, hard-violation gate, audit log sanitization)
+- **Solver Scale & Performance Benchmarks:** `backend/tests/test_scale_performance.py` (5 tests: Small/Medium/Large up to 5 depts & 25 divisions, infeasibility, localized repair & repeated runs)
+- **Production Readiness, Persistent Security & E2E Acceptance:** `backend/tests/test_phase7_production.py` (9 tests: production config validation, refresh rotation, persistent DB revocation & rate limit, cookie+CSRF enforcement, readiness probe, async worker orphan recovery, Gemini fallback resilience, 11-step E2E workflow)
 
 ```bash
-# Run the entire test suite
+# Run the entire test suite (106 tests)
 python -m pytest backend/tests -v
 
-# Run Phase 6 authentication, RBAC & approval tests only
-python -m pytest backend/tests/test_auth_rbac.py -v
-
-# Run AI assistant tests only
-python -m pytest backend/tests/test_ai_assistant.py -v
-
-# Run engine tests only
-python -m pytest backend/tests/test_engine.py -v
+# Run Phase 7 scale benchmarks & production readiness tests
+python -m pytest backend/tests/test_scale_performance.py backend/tests/test_phase7_production.py -v -s
 ```
+
+See [`docs/DEPLOYMENT_AND_OPERATIONS.md`](docs/DEPLOYMENT_AND_OPERATIONS.md) for production environment variables, Docker Compose deployment, Nginx HTTPS reverse proxy, PostgreSQL backup/restore drills, and crash recovery procedures.
 
 ---
 

@@ -9,6 +9,7 @@ desktop.ini
 *.env
 *.local
 !.env.example
+!.env.production.example
 
 # Node / JS
 node_modules/
