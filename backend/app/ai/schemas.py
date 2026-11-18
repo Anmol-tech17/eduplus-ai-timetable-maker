@@ -102,3 +102,4 @@ class AIStatusResponse(BaseModel):
     model_name: str
     supported_constraints: List[str]
     capabilities: List[str]
+

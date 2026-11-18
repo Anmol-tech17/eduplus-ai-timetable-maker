@@ -58,6 +58,16 @@
         <span class="nav-item-icon">📬</span> Request Inbox
         <span class="nav-item-badge" id="request-count-badge">2</span>
       </div>
+
+      <div id="nav-admin-section">
+        <div class="nav-section-label">Administration</div>
+        <div class="nav-item" id="nav-users" onclick="showPanel('users')" role="button" tabindex="0">
+          <span class="nav-item-icon">🔐</span> Users &amp; Roles
+        </div>
+        <div class="nav-item" id="nav-audit" onclick="showPanel('audit')" role="button" tabindex="0">
+          <span class="nav-item-icon">📜</span> Audit Logs
+        </div>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -65,7 +75,7 @@
         <div class="sidebar-avatar" id="sidebar-avatar" aria-hidden="true">PS</div>
         <div>
           <div class="sidebar-user-name" id="sidebar-username">Dr. Priya Sharma</div>
-          <div class="sidebar-user-role">Administrator</div>
+          <div class="sidebar-user-role" id="sidebar-role-label">Administrator</div>
         </div>
       </div>
       <button class="sidebar-signout" id="signout-btn" onclick="signOut()" aria-label="Sign out">
@@ -522,21 +532,58 @@
             <!-- Publish gate -->
             <div id="publish-gate-panel"></div>
 
+            <!-- Phase 6: Controlled Approval & Publication Workflow -->
+            <div class="card" id="approval-workflow-card" style="margin-top: var(--sp-4); border: 1px solid var(--gray-200);">
+              <div class="card-header">
+                <div class="card-title">Approval &amp; Publication Workflow</div>
+                <span class="badge badge-brand" id="approval-stage-badge">Select a version</span>
+              </div>
+              <div class="card-body" style="display: flex; flex-direction: column; gap: var(--sp-3);">
+                <div id="approval-meta-info" style="font-size: var(--text-xs); color: var(--gray-600);">
+                  Lifecycle: <strong>Candidate → Submit for Approval → Approved → Published</strong>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="approval-comment-input">Approval Note / Rejection Reason (Optional)</label>
+                  <input class="form-input" id="approval-comment-input" type="text" placeholder="e.g., Reviewed all labs and faculty workloads" />
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: var(--sp-2);">
+                  <button
+                    class="btn btn-primary"
+                    id="btn-submit-approval"
+                    onclick="submitCurrentForApproval()"
+                    style="flex: 1;"
+                  >📤 Submit for Approval</button>
+                  <button
+                    class="btn btn-success"
+                    id="btn-approve-version"
+                    onclick="approveCurrentCandidate()"
+                    style="flex: 1;"
+                  >✓ Approve</button>
+                  <button
+                    class="btn btn-secondary"
+                    id="btn-reject-version"
+                    onclick="rejectCurrentCandidate()"
+                    style="flex: 1; border-color: var(--orange-200); color: var(--orange-600);"
+                  >✕ Reject</button>
+                </div>
+              </div>
+            </div>
+
             <!-- Publish button area -->
             <div style="display: flex; gap: var(--sp-3); margin-top: var(--sp-4);">
               <button
                 class="btn btn-success btn-lg"
                 id="btn-publish"
                 onclick="publishCurrentCandidate()"
-                aria-label="Publish selected timetable version"
+                aria-label="Publish approved timetable version"
                 style="flex:1;"
-              >✓ Publish Timetable</button>
+              >🚀 Publish Approved Timetable</button>
               <button class="btn btn-secondary btn-lg" onclick="showPanel('timetable')" style="flex:1;">
                 View Grid →
               </button>
             </div>
             <p class="form-hint" id="publish-hint-text" style="text-align: center; margin-top: 8px;">
-              Publishing marks the version as published in the database and distributes to teachers and students.
+              Only approved versions with zero Level A hard violations can be published. Prior published versions are archived.
             </p>
           </div>
         </div>
@@ -822,6 +869,112 @@
 
         <div class="card" id="requests-card">
           <div id="requests-list"><!-- Populated by JS --></div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- PANEL: USERS & ROLES (ADMIN ONLY)                                   -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <section id="panel-users" class="panel hidden" aria-label="User and role management">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title">Users &amp; Roles</h1>
+            <p class="section-desc">Manage institutional accounts, role assignments, and timetable approval permissions</p>
+          </div>
+          <span class="badge badge-orange">Admin Only</span>
+        </div>
+
+        <div class="card" style="margin-bottom: var(--sp-5);">
+          <div class="card-header">
+            <div class="card-title">Create Institutional User</div>
+          </div>
+          <div class="card-body">
+            <form id="create-user-form" onsubmit="handleCreateUser(event)" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-3); align-items: end;">
+              <div class="form-group">
+                <label class="form-label" for="new-user-name">Full Name</label>
+                <input class="form-input" id="new-user-name" type="text" placeholder="Prof. Jane Doe" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="new-user-email">Email</label>
+                <input class="form-input" id="new-user-email" type="email" placeholder="user@eduplus.demo" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="new-user-password">Temporary Password (min 8 chars)</label>
+                <input class="form-input" id="new-user-password" type="password" minlength="8" placeholder="••••••••" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="new-user-role">Role</label>
+                <select class="form-select" id="new-user-role">
+                  <option value="coordinator">Timetable Coordinator</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="student">Student</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; padding-bottom: 10px;">
+                <input type="checkbox" id="new-user-can-approve" />
+                <label for="new-user-can-approve" style="font-size: var(--text-xs); font-weight: 600;">Can Approve/Publish</label>
+              </div>
+              <div>
+                <button class="btn btn-primary w-full" type="submit">+ Create User</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Registered Accounts</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadAdminUsers()">↻ Refresh</button>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name / Email</th>
+                  <th>Role</th>
+                  <th>Approval Rights</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <tr><td colspan="5" class="text-muted">Loading users…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- PANEL: AUDIT LOGS (ADMIN ONLY)                                      -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <section id="panel-audit" class="panel hidden" aria-label="Security and operational audit logs">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title">Audit Logs</h1>
+            <p class="section-desc">Immutable trail of authentication, role changes, timetable approvals, and publications</p>
+          </div>
+          <button class="btn btn-secondary" onclick="loadAuditLogs()">↻ Refresh Logs</button>
+        </div>
+
+        <div class="card">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp (UTC)</th>
+                  <th>Actor</th>
+                  <th>Action</th>
+                  <th>Target Entity</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+                <tr><td colspan="5" class="text-muted">Loading audit logs…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

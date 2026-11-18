@@ -28,19 +28,29 @@
 
     <!-- Card body -->
     <div class="login-body">
-      <!-- Prototype notice -->
-      <div class="login-proto-notice" role="note" aria-label="Prototype notice">
-        ⚠️ <strong>Prototype Demo Only.</strong> Authentication is mocked for demonstration purposes.
-        This system does not have production-level security.
+      <!-- Session status alert (expired / unauthorized) -->
+      <div id="session-alert" class="alert alert-warning hidden" role="alert" style="margin-bottom: 16px;">
+        <span class="alert-icon">⚠</span>
+        <span id="session-alert-text"></span>
+      </div>
+
+      <!-- Auth backend indicator -->
+      <div class="login-proto-notice" role="note" id="auth-mode-notice" aria-label="Authentication mode">
+        🔐 <strong>Role-Based Authentication Enabled.</strong> Sign in with your institutional account to obtain a scoped access token.
       </div>
 
       <!-- Demo credential quick-fill -->
       <div class="demo-creds" id="demo-creds-panel">
-        <div class="demo-creds-title">Demo Credentials — click to auto-fill</div>
+        <div class="demo-creds-title">Institutional Test Accounts — click to auto-fill</div>
         <div class="demo-cred-row" id="fill-admin" role="button" tabindex="0" aria-label="Auto-fill Admin credentials" onclick="fillCredentials('admin@eduplus.demo','admin123')">
           <span class="demo-cred-role">Admin</span>
           <span class="demo-cred-email">admin@eduplus.demo</span>
           <span class="demo-cred-pass">admin123</span>
+        </div>
+        <div class="demo-cred-row" id="fill-coordinator" role="button" tabindex="0" aria-label="Auto-fill Coordinator credentials" onclick="fillCredentials('coordinator@eduplus.demo','coordinator123')">
+          <span class="demo-cred-role">Coordinator</span>
+          <span class="demo-cred-email">coordinator@eduplus.demo</span>
+          <span class="demo-cred-pass">coordinator123</span>
         </div>
         <div class="demo-cred-row" id="fill-teacher" role="button" tabindex="0" aria-label="Auto-fill Teacher credentials" onclick="fillCredentials('teacher@eduplus.demo','teacher123')">
           <span class="demo-cred-role">Teacher</span>
@@ -102,7 +112,7 @@
     <div class="card-footer" style="text-align: center; padding: 12px 32px;">
       <p style="font-size: 11px; color: var(--gray-400); line-height: 1.5;">
         Example Engineering College &bull; AIML Department &bull; Academic Year 2026–27<br />
-        EduPlus v0.1-prototype &bull; <span style="color: var(--warning-500);">Demo — Not for production use</span>
+        EduPlus v0.6.0 &bull; <span style="color: var(--brand-600);">JWT RBAC &amp; Approval Workflows</span>
       </p>
     </div>
   </div>
@@ -113,8 +123,33 @@
 
 <!-- Scripts -->
 <script src="src/data/mockData.js"></script>
+<script src="src/js/api.js"></script>
 <script>
 "use strict";
+
+const ROLE_ROUTES = {
+  admin:       'admin.html',
+  coordinator: 'admin.html',
+  teacher:     'teacher.html',
+  student:     'student.html',
+};
+
+// ─── SESSION STATUS BANNER (EXPIRED / UNAUTHORIZED) ───────────────────────────
+(function showRedirectReason() {
+  const params = new URLSearchParams(window.location.search);
+  const reason = params.get('reason');
+  const alertEl = document.getElementById('session-alert');
+  const textEl  = document.getElementById('session-alert-text');
+  if (!reason || !alertEl || !textEl) return;
+
+  if (reason === 'session_expired') {
+    textEl.textContent = 'Your session has expired or been signed out. Please sign in again.';
+    alertEl.classList.remove('hidden');
+  } else if (reason === 'unauthorized') {
+    textEl.textContent = 'Access denied: your account does not have permission to view that workspace.';
+    alertEl.classList.remove('hidden');
+  }
+})();
 
 // ─── CREDENTIAL AUTO-FILL ─────────────────────────────────────────────────────
 function fillCredentials(email, password) {
@@ -124,7 +159,6 @@ function fillCredentials(email, password) {
   document.getElementById('password-input').dispatchEvent(new Event('input'));
 }
 
-// Keyboard support for demo-cred rows
 document.querySelectorAll('.demo-cred-row').forEach(row => {
   row.addEventListener('keypress', e => {
     if (e.key === 'Enter' || e.key === ' ') row.click();
@@ -147,10 +181,10 @@ function showToast(message, type = 'info') {
   }, 3500);
 }
 
-// ─── LOGIN FORM SUBMISSION ─────────────────────────────────────────────────────
+// ─── LOGIN FORM SUBMISSION (REAL BACKEND JWT + OFFLINE FALLBACK) ──────────────
 const loginForm = document.getElementById('login-form');
 
-loginForm.addEventListener('submit', function (e) {
+loginForm.addEventListener('submit', async function (e) {
   e.preventDefault();
   clearErrors();
 
@@ -171,35 +205,42 @@ loginForm.addEventListener('submit', function (e) {
   }
   if (!valid) return;
 
-  // Simulate async login
   setLoading(true);
-  setTimeout(() => {
-    const user = window.EduPlusData.DEMO_USERS.find(
-      u => u.email === email && u.password === password
-    );
+  try {
+    const isLive = window.EduPlusAPI ? await window.EduPlusAPI.isBackendLive() : false;
 
-    setLoading(false);
-
-    if (!user) {
-      document.getElementById('login-error').classList.remove('hidden');
-      document.getElementById('login-error-text').textContent =
-        'Invalid email or password. Use one of the demo credentials above.';
+    if (isLive) {
+      const authData = await window.EduPlusAPI.login(email, password);
+      const user = authData.user;
+      const displayName = user.full_name || user.email;
+      showToast(`Welcome, ${displayName}! Redirecting…`, 'success');
+      setTimeout(() => {
+        window.location.href = ROLE_ROUTES[user.role] || 'index.html';
+      }, 500);
       return;
     }
 
-    // Store mock session in sessionStorage
-    sessionStorage.setItem('eduplus_user', JSON.stringify(user));
-    showToast(`Welcome, ${user.name}! Redirecting…`, 'success');
-
+    // Offline prototype demo fallback ONLY when backend is unreachable
+    const mockUsers = (window.EduPlusData && window.EduPlusData.DEMO_USERS) || [];
+    const fallbackUser = mockUsers.find(u => u.email === email && u.password === password);
+    if (!fallbackUser) {
+      document.getElementById('login-error').classList.remove('hidden');
+      document.getElementById('login-error-text').textContent =
+        'Backend is offline and credentials do not match demo fallback accounts.';
+      return;
+    }
+    sessionStorage.setItem('eduplus_user', JSON.stringify(fallbackUser));
+    showToast(`Offline Demo Mode: Welcome, ${fallbackUser.name}!`, 'warning');
     setTimeout(() => {
-      const routes = {
-        admin:   'admin.html',
-        teacher: 'teacher.html',
-        student: 'student.html',
-      };
-      window.location.href = routes[user.role] || 'index.html';
-    }, 800);
-  }, 700);
+      window.location.href = ROLE_ROUTES[fallbackUser.role] || 'index.html';
+    }, 500);
+  } catch (err) {
+    document.getElementById('login-error').classList.remove('hidden');
+    document.getElementById('login-error-text').textContent =
+      err.message || 'Invalid email or password.';
+  } finally {
+    setLoading(false);
+  }
 });
 
 function showFieldError(id, msg) {
@@ -222,15 +263,31 @@ function setLoading(loading) {
   spinner.classList.toggle('hidden', !loading);
 }
 
-// ─── REDIRECT IF ALREADY LOGGED IN ────────────────────────────────────────────
-const existingUser = sessionStorage.getItem('eduplus_user');
-if (existingUser) {
+// ─── REDIRECT IF ALREADY AUTHENTICATED ────────────────────────────────────────
+(async function checkExistingSession() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('reason')) return; // Do not auto-redirect away from alert banner
+
+  const existingUser = sessionStorage.getItem('eduplus_user');
+  const existingToken = sessionStorage.getItem('eduplus_token');
+  if (!existingUser) return;
+
   try {
     const u = JSON.parse(existingUser);
-    const routes = { admin: 'admin.html', teacher: 'teacher.html', student: 'student.html' };
-    if (routes[u.role]) window.location.href = routes[u.role];
-  } catch (_) { sessionStorage.removeItem('eduplus_user'); }
-}
+    if (existingToken && window.EduPlusAPI) {
+      const isLive = await window.EduPlusAPI.isBackendLive();
+      if (isLive) {
+        const me = await window.EduPlusAPI.getMe();
+        window.EduPlusAPI.setStoredAuth(existingToken, me);
+        if (ROLE_ROUTES[me.role]) window.location.href = ROLE_ROUTES[me.role];
+        return;
+      }
+    }
+    if (ROLE_ROUTES[u.role]) window.location.href = ROLE_ROUTES[u.role];
+  } catch (_) {
+    if (window.EduPlusAPI) window.EduPlusAPI.clearStoredAuth();
+  }
+})();
 </script>
 </body>
 </html>

@@ -9,14 +9,16 @@
 const _teacherUser = (() => {
   try {
     const u = JSON.parse(sessionStorage.getItem('eduplus_user') || 'null');
-    if (!u || u.role !== 'teacher') { window.location.href = 'index.html'; return null; }
+    if (!u) { window.location.href = 'index.html?reason=session_expired'; return null; }
+    if (u.role !== 'teacher') { window.location.href = 'index.html?reason=unauthorized'; return null; }
     return u;
-  } catch (_) { window.location.href = 'index.html'; return null; }
+  } catch (_) { window.location.href = 'index.html?reason=session_expired'; return null; }
 })();
 if (_teacherUser) {
-  document.getElementById('sidebar-username').textContent = _teacherUser.name;
+  const tName = _teacherUser.full_name || _teacherUser.name || _teacherUser.email || 'Teacher';
+  document.getElementById('sidebar-username').textContent = tName;
   document.getElementById('sidebar-avatar').textContent =
-    _teacherUser.name.split(' ').map(p => p[0]).join('').slice(0,2).toUpperCase();
+    tName.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
 }
 
 const D = window.EduPlusData;
@@ -82,9 +84,11 @@ async function initTeacherLiveTimetable() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initTeacherLiveTimetable();
+  loadLiveTeacherRequests();
 });
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
   initTeacherLiveTimetable();
+  loadLiveTeacherRequests();
 }
 
 // ─── PANEL NAVIGATION ─────────────────────────────────────────────────────────
@@ -110,8 +114,13 @@ function showPanel(name) {
   if (name === 'my-requests')  renderMyRequests();
   if (name === 'notifications') renderNotifications();
 }
-function signOut() {
-  sessionStorage.removeItem('eduplus_user');
+async function signOut() {
+  if (window.EduPlusAPI) {
+    await window.EduPlusAPI.logout();
+  } else {
+    sessionStorage.removeItem('eduplus_user');
+    sessionStorage.removeItem('eduplus_token');
+  }
   window.location.href = 'index.html';
 }
 
@@ -249,6 +258,34 @@ if (reqForm) {
       return;
     }
 
+    const allowedTypes = ['availability', 'reschedule', 'substitution', 'cancellation'];
+    const apiType = allowedTypes.includes(type) ? type : 'reschedule';
+
+    if (window.EduPlusAPI && window.EduPlusAPI.getStoredToken()) {
+      window.EduPlusAPI.submitTeacherRequest({
+        request_type: apiType,
+        reason: `[${session}] ${reason}`,
+      }).then((saved) => {
+        _myRequests.unshift({
+          id: saved.id,
+          type: saved.request_type,
+          submittedBy: saved.teacher_id,
+          submitterName: saved.teacher_name || _teacherUser?.name || 'Teacher',
+          subject: `${saved.request_type.charAt(0).toUpperCase() + saved.request_type.slice(1)}`,
+          details: saved.reason,
+          status: saved.status,
+          submittedAt: saved.created_at,
+          priority: 'normal',
+        });
+        reqForm.reset();
+        showToast('Request submitted to coordinator & persisted to backend.', 'success');
+        renderMyRequests();
+      }).catch((err) => {
+        showToast(`Failed to submit request: ${err.message}`, 'error');
+      });
+      return;
+    }
+
     const newReq = {
       id: `REQ${Date.now()}`,
       type,
@@ -262,9 +299,35 @@ if (reqForm) {
     };
     _myRequests.unshift(newReq);
     reqForm.reset();
-    showToast('Request submitted. Admin will review shortly. (Simulated — no backend call made.)', 'success');
+    showToast('Request submitted (offline demo mode).', 'info');
     renderMyRequests();
   });
+}
+
+async function loadLiveTeacherRequests() {
+  if (!window.EduPlusAPI || !window.EduPlusAPI.getStoredToken()) return;
+  try {
+    const items = await window.EduPlusAPI.getTeacherRequests();
+    if (Array.isArray(items) && items.length > 0) {
+      _myRequests.length = 0;
+      items.forEach(saved => {
+        _myRequests.push({
+          id: saved.id,
+          type: saved.request_type,
+          submittedBy: saved.teacher_id,
+          submitterName: saved.teacher_name || _teacherUser?.name || 'Teacher',
+          subject: `${saved.request_type.charAt(0).toUpperCase() + saved.request_type.slice(1)}${saved.day_name ? ' — ' + saved.day_name : ''}`,
+          details: saved.reason + (saved.review_comment ? ` (Review: ${saved.review_comment})` : ''),
+          status: saved.status,
+          submittedAt: saved.created_at,
+          priority: 'normal',
+        });
+      });
+      renderMyRequests();
+    }
+  } catch (err) {
+    console.warn('[Teacher Dashboard] Failed loading live requests:', err);
+  }
 }
 
 function renderMyRequests() {

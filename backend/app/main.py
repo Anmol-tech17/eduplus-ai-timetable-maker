@@ -21,16 +21,27 @@ def create_application() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # Configure CORS
+    # Configure CORS with explicit origins (no wildcard '*' with credentials)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
     )
 
-    # Global Exception Handlers
+    # Security response headers middleware
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if request.url.path.startswith(f"{settings.API_V1_PREFIX}/auth"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    # Global Exception Handler (never leaks internal stack/SQL details)
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error(f"Unhandled error processing {request.method} {request.url.path}: {exc}", exc_info=True)
@@ -39,7 +50,7 @@ def create_application() -> FastAPI:
             content={
                 "success": False,
                 "message": "An internal server error occurred.",
-                "detail": str(exc) if settings.ENVIRONMENT == "development" else None,
+                "detail": "Internal server error. Please contact an administrator if the issue persists.",
             },
         )
 
@@ -60,4 +71,3 @@ def create_application() -> FastAPI:
 
 
 app = create_application()
-

@@ -92,10 +92,20 @@ class TimetableVersionOut(BaseModel):
     academic_year_code: str
     semester: int
     is_repair: bool
-    published_at: Optional[datetime]
+    submitted_by: Optional[UUID] = None
+    submitted_at: Optional[datetime] = None
+    approved_by: Optional[UUID] = None
+    approved_at: Optional[datetime] = None
+    approval_comment: Optional[str] = None
+    published_by: Optional[UUID] = None
+    published_at: Optional[datetime] = None
     created_at: datetime
     total_sessions: Optional[int] = None
     hard_violations: Optional[int] = None
+
+
+class ApprovalActionRequest(BaseModel):
+    comment: Optional[str] = Field(default=None, max_length=1000, description="Optional approval note or rejection reason.")
 
 
 class TimetableVersionDetail(TimetableVersionOut):

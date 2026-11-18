@@ -239,11 +239,25 @@ class TestVersionsEndpoint:
         gen_data = _generate_test_version(client, db_session)
         version_id = gen_data["version_id"]
 
+        # Controlled lifecycle: submit -> approve -> publish
+        sub_resp = client.post(f"/api/v1/timetable/versions/{version_id}/submit")
+        assert sub_resp.status_code == 200
+        assert sub_resp.json()["status"] == "pending_approval"
+
+        app_resp = client.post(
+            f"/api/v1/timetable/versions/{version_id}/approve",
+            json={"comment": "Verified zero hard conflicts"},
+        )
+        assert app_resp.status_code == 200
+        assert app_resp.json()["status"] == "approved"
+
         resp = client.post(f"/api/v1/timetable/versions/{version_id}/publish")
         assert resp.status_code == 200
         pub_data = resp.json()
         assert pub_data["status"] == "published"
         assert pub_data["published_at"] is not None
+        assert pub_data["approved_by"] is not None
+        assert pub_data["published_by"] is not None
 
 
 class TestCompareEndpoint:

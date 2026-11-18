@@ -233,22 +233,44 @@ def seed_database(db: Session = None) -> dict:
                 stats["subjects"] += 1
         db.commit()
 
-        # 8. User Accounts (Mock credentials with secure hashing)
+        # 8. User Accounts (Institutional roles with salted PBKDF2-SHA256 hashing & entity links)
+        ay3_for_seed = db.query(AcademicYear).filter(AcademicYear.department_id == dept.id, AcademicYear.year_number == 3).first()
+        div3a_for_seed = (
+            db.query(Division).filter(Division.academic_year_id == ay3_for_seed.id, Division.name == "A").first()
+            if ay3_for_seed else None
+        )
+        tchr_admin = db.query(Teacher).filter(Teacher.email == "admin@eduplus.demo").first()
+        tchr_coord = db.query(Teacher).filter(Teacher.email == "v.singh@eduplus.demo").first()
+        tchr_faculty = db.query(Teacher).filter(Teacher.email == "teacher@eduplus.demo").first()
+
         users = [
-            ("admin@eduplus.demo", "admin123", "admin"),
-            ("teacher@eduplus.demo", "teacher123", "teacher"),
-            ("student@eduplus.demo", "student123", "student"),
+            ("admin@eduplus.demo", "admin123", "admin", "Dr. Priya Sharma", tchr_admin.id if tchr_admin else None, True),
+            ("coordinator@eduplus.demo", "coordinator123", "coordinator", "Prof. Vikram Singh", tchr_coord.id if tchr_coord else None, False),
+            ("teacher@eduplus.demo", "teacher123", "teacher", "Prof. Arjun Mehta", tchr_faculty.id if tchr_faculty else None, False),
+            ("student@eduplus.demo", "student123", "student", "Sneha Patel (Div 3A)", div3a_for_seed.id if div3a_for_seed else None, False),
         ]
-        for u_email, u_pass, u_role in users:
-            if not db.query(UserAccount).filter(UserAccount.email == u_email).first():
+        for u_email, u_pass, u_role, u_name, u_linked, u_approve in users:
+            existing_user = db.query(UserAccount).filter(UserAccount.email == u_email).first()
+            if not existing_user:
                 db.add(UserAccount(
                     email=u_email,
+                    full_name=u_name,
                     password_hash=get_password_hash(u_pass),
                     role=u_role,
                     department_id=dept.id,
+                    linked_entity_id=u_linked,
+                    can_approve_timetable=u_approve,
                     is_active=True,
                 ))
                 stats["users"] += 1
+            else:
+                # Backfill Phase 6 metadata on pre-existing seeded accounts without overwriting passwords
+                if not existing_user.full_name:
+                    existing_user.full_name = u_name
+                if existing_user.linked_entity_id is None and u_linked is not None:
+                    existing_user.linked_entity_id = u_linked
+                if u_role == "admin" and not existing_user.can_approve_timetable:
+                    existing_user.can_approve_timetable = True
         db.commit()
 
         # 9. Teaching Assignments & Session Requirements (Year 3 Div A Baseline)

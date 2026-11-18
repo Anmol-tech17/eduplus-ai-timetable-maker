@@ -14,10 +14,16 @@ from backend.app.api.v1.teachers import router as teachers_router
 from backend.app.api.v1.rooms import router as rooms_router
 from backend.app.api.v1.timetable import router as timetable_router
 from backend.app.api.v1.ai import router as ai_router
+from backend.app.api.v1.auth import router as auth_router
+from backend.app.api.v1.users import router as users_router
+from backend.app.api.v1.requests import router as requests_router
 
 api_v1_router = APIRouter()
 
 api_v1_router.include_router(health_router)
+api_v1_router.include_router(auth_router)
+api_v1_router.include_router(users_router)
+api_v1_router.include_router(requests_router)
 api_v1_router.include_router(departments_router)
 api_v1_router.include_router(academic_years_router)
 api_v1_router.include_router(divisions_router)

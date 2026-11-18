@@ -1,27 +1,38 @@
 """
 backend/app/api/v1/timetable.py
-EduPlus AI Timetable Maker — Timetable Generation & Lifecycle Endpoints
+EduPlus AI Timetable Maker — Timetable Generation, Approval & Lifecycle Endpoints (RBAC Protected)
 
 Endpoints
 ---------
-POST   /timetable/generate          — Generate a timetable
-POST   /timetable/validate          — Validate an existing version
-GET    /timetable/versions          — List versions for a department
-GET    /timetable/versions/{id}     — Get a version with sessions
-GET    /timetable/compare           — Compare two versions
-POST   /timetable/repair            — Localised repair
-GET    /timetable/runs/{id}         — Get generation run status/details
+POST   /timetable/generate                   — Generate a timetable (Admin, Coordinator)
+POST   /timetable/validate                   — Validate an existing version (Admin, Coordinator)
+GET    /timetable/versions                   — List versions (role & dept isolated; Teacher/Student published only)
+GET    /timetable/versions/{id}              — Get a version with sessions (role, dept & entity isolated)
+POST   /timetable/versions/{id}/submit       — Submit candidate for approval (Admin, Coordinator)
+POST   /timetable/versions/{id}/approve      — Approve submitted candidate (Approver: Admin or authorized Coordinator)
+POST   /timetable/versions/{id}/reject       — Reject submitted candidate with optional reason (Approver)
+POST   /timetable/versions/{id}/publish      — Publish an approved version (Approver; blocks hard violations, archives prior)
+GET    /timetable/compare                    — Compare two versions (Admin, Coordinator)
+POST   /timetable/repair                     — Localised repair (Admin, Coordinator)
+GET    /timetable/runs/{id}                  — Get generation run status/details (Admin, Coordinator)
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import get_db
+from backend.app.api.deps import (
+    assert_department_access,
+    get_current_user,
+    get_db,
+    require_approver,
+    require_roles,
+)
 from backend.app.core.logging import logger
 from backend.app.engine.comparator import compare_versions
 from backend.app.engine.input_builder import SchedulingInputBuilder
@@ -30,10 +41,12 @@ from backend.app.engine.solver import run_solver
 from backend.app.engine.types import (
     ScheduledSessionInfo,
     SlotKey,
-    SolverStatus,
     ViolationLevel,
 )
 from backend.app.engine.validator import validate_timetable
+from backend.app.models.academic import Batch
+from backend.app.models.faculty import Teacher
+from backend.app.models.security import UserAccount
 from backend.app.models.timetable import (
     GenerationRun,
     ScheduledSession,
@@ -41,6 +54,7 @@ from backend.app.models.timetable import (
     Violation,
 )
 from backend.app.schemas.timetable import (
+    ApprovalActionRequest,
     ComparisonResponse,
     GenerationRequest,
     GenerationResponse,
@@ -52,8 +66,72 @@ from backend.app.schemas.timetable import (
     ValidateVersionRequest,
     ViolationOut,
 )
+from backend.app.services.audit import record_audit_event
 
 router = APIRouter(prefix="/timetable", tags=["Timetable"])
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _version_to_out(version: TimetableVersion, db: Session) -> TimetableVersionOut:
+    session_count = (
+        db.query(ScheduledSession)
+        .filter(ScheduledSession.timetable_version_id == version.id)
+        .count()
+    )
+    hard_viol = (
+        db.query(Violation)
+        .filter(Violation.timetable_version_id == version.id, Violation.rule_level == "A")
+        .count()
+    )
+    return TimetableVersionOut(
+        id=version.id,
+        department_id=version.department_id,
+        version_number=version.version_number,
+        status=version.status,
+        label=version.label,
+        academic_year_code=version.academic_year_code,
+        semester=version.semester,
+        is_repair=version.is_repair,
+        submitted_by=version.submitted_by,
+        submitted_at=version.submitted_at,
+        approved_by=version.approved_by,
+        approved_at=version.approved_at,
+        approval_comment=version.approval_comment,
+        published_by=version.published_by,
+        published_at=version.published_at,
+        created_at=version.created_at,
+        total_sessions=session_count,
+        hard_violations=hard_viol,
+    )
+
+
+def _count_hard_violations(version: TimetableVersion, db: Session) -> int:
+    return (
+        db.query(Violation)
+        .filter(Violation.timetable_version_id == version.id, Violation.rule_level == "A")
+        .count()
+    )
+
+
+def _resolve_teacher_id(user: UserAccount, db: Session) -> Optional[str]:
+    if user.linked_entity_id:
+        return str(user.linked_entity_id)
+    teacher = db.query(Teacher).filter(Teacher.email == user.email).first()
+    return str(teacher.id) if teacher else None
+
+
+def _resolve_student_allowed_groups(user: UserAccount, db: Session) -> Set[str]:
+    allowed: Set[str] = set()
+    if user.linked_entity_id:
+        div_id = user.linked_entity_id
+        allowed.add(str(div_id))
+        batches = db.query(Batch).filter(Batch.division_id == div_id).all()
+        for b in batches:
+            allowed.add(str(b.id))
+    return allowed
 
 
 # ---------------------------------------------------------------------------
@@ -61,18 +139,20 @@ router = APIRouter(prefix="/timetable", tags=["Timetable"])
 # ---------------------------------------------------------------------------
 
 @router.post("/generate", response_model=GenerationResponse, status_code=status.HTTP_202_ACCEPTED)
-def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)):
+def generate_timetable(
+    payload: GenerationRequest,
+    request: Request,
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
+    db: Session = Depends(get_db),
+):
     """
     Generate a new timetable for the given department/academic-year scope.
-
-    1. Builds normalised scheduling input from the database.
-    2. Runs the CP-SAT solver.
-    3. Validates the result with the independent validator.
-    4. Persists the generation run, version, sessions, and violations.
-    5. Returns the full result.
+    Allowed: Admin, Coordinator (own department only).
     """
-    dept_id = str(request.department_id)
-    ay_ids = [str(x) for x in request.academic_year_ids] if request.academic_year_ids else None
+    assert_department_access(current_user, payload.department_id)
+
+    dept_id = str(payload.department_id)
+    ay_ids = [str(x) for x in payload.academic_year_ids] if payload.academic_year_ids else None
 
     # Build input
     try:
@@ -80,7 +160,7 @@ def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)
         scheduling_input = builder.build(dept_id, ay_ids)
     except Exception as exc:
         logger.error(f"Input build failed: {exc}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Failed to build scheduling input: {exc}")
+        raise HTTPException(status_code=400, detail="Failed to build scheduling input.")
 
     if not scheduling_input.assignments:
         raise HTTPException(
@@ -95,14 +175,14 @@ def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)
         f"Starting generation for dept={dept_id}, "
         f"assignments={len(scheduling_input.assignments)}, "
         f"rooms={len(scheduling_input.rooms)}, "
-        f"time_limit={request.time_limit_seconds}s"
+        f"time_limit={payload.time_limit_seconds}s"
     )
 
     # Apply user-confirmed AI / coordinator constraints
-    if request.confirmed_constraints:
-        logger.info(f"Applying {len(request.confirmed_constraints)} confirmed constraints to scheduling input")
+    if payload.confirmed_constraints:
+        logger.info(f"Applying {len(payload.confirmed_constraints)} confirmed constraints to scheduling input")
         active_days = [wd.day_name for wd in scheduling_input.working_days if wd.is_active]
-        for c in request.confirmed_constraints:
+        for c in payload.confirmed_constraints:
             cat = c.get("category")
             target_id = c.get("target_id")
             slot_indices = c.get("slot_indices", [])
@@ -135,19 +215,22 @@ def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)
                 scheduling_input.gap_penalty_weight = 6
 
     # Solve
-    solver_result = run_solver(scheduling_input, time_limit_seconds=request.time_limit_seconds)
+    solver_result = run_solver(scheduling_input, time_limit_seconds=payload.time_limit_seconds)
     logger.info(f"Solver finished: {solver_result.status.value} in {solver_result.solver_time_ms}ms")
 
-    # Validate (even if solver reports OPTIMAL — independent check)
+    # Validate (independent deterministic check)
     violations = []
     if solver_result.sessions:
         violations = validate_timetable(
             solver_result.sessions,
             scheduling_input,
-            check_soft=request.check_soft_constraints,
+            check_soft=payload.check_soft_constraints,
         )
 
-    # Persist
+    hard_count = sum(1 for v in violations if v.level == ViolationLevel.A)
+    soft_count = sum(1 for v in violations if v.level != ViolationLevel.A)
+
+    # Persist + audit log
     try:
         version = persist_generation_result(
             db=db,
@@ -155,18 +238,44 @@ def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)
             solver_result=solver_result,
             violations=violations,
             department_id=dept_id,
-            label=request.label,
-            academic_year_code=request.academic_year_code,
-            semester=request.semester,
+            label=payload.label,
+            academic_year_code=payload.academic_year_code,
+            semester=payload.semester,
+        )
+        if payload.confirmed_constraints:
+            record_audit_event(
+                db=db,
+                action="AI_CONSTRAINTS_CONFIRMED",
+                entity_type="TIMETABLE_VERSION",
+                user_id=current_user.id,
+                entity_id=version.id if version else None,
+                payload={
+                    "department_id": dept_id,
+                    "constraints_count": len(payload.confirmed_constraints),
+                    "categories": [c.get("category") for c in payload.confirmed_constraints],
+                },
+                request=request,
+            )
+        record_audit_event(
+            db=db,
+            action="TIMETABLE_GENERATE",
+            entity_type="TIMETABLE_VERSION",
+            user_id=current_user.id,
+            entity_id=version.id if version else None,
+            payload={
+                "department_id": dept_id,
+                "label": payload.label,
+                "solver_status": solver_result.status.value,
+                "total_sessions": len(solver_result.sessions),
+                "hard_violations": hard_count,
+            },
+            request=request,
         )
         db.commit()
     except Exception as exc:
         db.rollback()
         logger.error(f"Persistence failed: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to persist generation result: {exc}")
-
-    hard_count = sum(1 for v in violations if v.level == ViolationLevel.A)
-    soft_count = sum(1 for v in violations if v.level != ViolationLevel.A)
+        raise HTTPException(status_code=500, detail="Failed to persist generation result.")
 
     return GenerationResponse(
         status=solver_result.status.value,
@@ -189,35 +298,36 @@ def generate_timetable(request: GenerationRequest, db: Session = Depends(get_db)
 # ---------------------------------------------------------------------------
 
 @router.post("/validate", response_model=GenerationResponse)
-def validate_version(request: ValidateVersionRequest, db: Session = Depends(get_db)):
+def validate_version(
+    payload: ValidateVersionRequest,
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
+    db: Session = Depends(get_db),
+):
     """Re-validate an existing timetable version and return updated violation list."""
     version = db.query(TimetableVersion).filter(
-        TimetableVersion.id == request.version_id
+        TimetableVersion.id == payload.version_id
     ).first()
     if not version:
         raise HTTPException(status_code=404, detail="Timetable version not found.")
+
+    assert_department_access(current_user, version.department_id)
 
     dept_id = str(version.department_id)
     builder = SchedulingInputBuilder(db)
     scheduling_input = builder.build(dept_id)
 
-    # Load persisted sessions back into ScheduledSessionInfo
     db_sessions = (
         db.query(ScheduledSession)
-        .filter(ScheduledSession.timetable_version_id == request.version_id)
+        .filter(ScheduledSession.timetable_version_id == payload.version_id)
         .all()
     )
 
-    # Restrict validation scope to assignments scheduled in this version (plus any assigned)
     assigned_ta_ids = {str(s.teaching_assignment_id) for s in db_sessions}
     if assigned_ta_ids:
         scheduling_input.assignments = [
             a for a in scheduling_input.assignments if a.id in assigned_ta_ids
         ]
-    # Map time_slot_id -> slot_index
-    slot_index_map = {ts.id: ts.slot_index for ts in scheduling_input.time_slots
-                      if hasattr(ts, 'id')}
-    # Rebuild from DB (we stored slot by time_slot_id UUID)
+
     slot_uuid_map = {}
     from backend.app.models.scheduling import TimeSlot
     for ts in db.query(TimeSlot).all():
@@ -227,7 +337,7 @@ def validate_version(request: ValidateVersionRequest, db: Session = Depends(get_
         ScheduledSessionInfo(
             assignment_id=str(s.teaching_assignment_id),
             teacher_id=str(s.teacher_id),
-            subject_id=str(s.teaching_assignment_id),  # proxied
+            subject_id=str(s.teaching_assignment_id),
             subject_name="",
             room_id=str(s.room_id),
             day_name=s.day_name,
@@ -241,13 +351,13 @@ def validate_version(request: ValidateVersionRequest, db: Session = Depends(get_
         for s in db_sessions
     ]
 
-    violations = validate_timetable(session_infos, scheduling_input, check_soft=request.check_soft)
+    violations = validate_timetable(session_infos, scheduling_input, check_soft=payload.check_soft)
     hard_count = sum(1 for v in violations if v.level == ViolationLevel.A)
     soft_count = sum(1 for v in violations if v.level != ViolationLevel.A)
 
     return GenerationResponse(
         status="REVALIDATED",
-        version_id=str(request.version_id),
+        version_id=str(payload.version_id),
         version_status=version.status,
         solver_time_ms=0,
         total_sessions=len(session_infos),
@@ -258,76 +368,109 @@ def validate_version(request: ValidateVersionRequest, db: Session = Depends(get_
 
 
 # ---------------------------------------------------------------------------
-# Version list
+# Version list (Role & Institutional Scope Isolated)
 # ---------------------------------------------------------------------------
 
 @router.get("/versions", response_model=List[TimetableVersionOut])
 def list_versions(
     department_id: Optional[uuid.UUID] = Query(default=None),
-    status: Optional[str] = Query(default=None),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
     limit: int = Query(default=20, le=100),
+    current_user: UserAccount = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List timetable versions, optionally filtered by department and status."""
-    q = db.query(TimetableVersion)
+    """
+    List timetable versions with strict RBAC & data isolation:
+    - Student & Teacher: strictly published versions within their own department.
+    - Coordinator: all statuses within their own department.
+    - Admin: all departments and statuses.
+    """
     if department_id:
-        q = q.filter(TimetableVersion.department_id == department_id)
-    if status:
-        q = q.filter(TimetableVersion.status == status)
-    q = q.order_by(TimetableVersion.created_at.desc()).limit(limit)
-    versions = q.all()
+        assert_department_access(current_user, department_id)
 
-    result = []
-    for v in versions:
-        session_count = (
-            db.query(ScheduledSession)
-            .filter(ScheduledSession.timetable_version_id == v.id)
-            .count()
-        )
-        hard_viol = (
-            db.query(Violation)
-            .filter(Violation.timetable_version_id == v.id, Violation.rule_level == "A")
-            .count()
-        )
-        out = TimetableVersionOut(
-            id=v.id,
-            department_id=v.department_id,
-            version_number=v.version_number,
-            status=v.status,
-            label=v.label,
-            academic_year_code=v.academic_year_code,
-            semester=v.semester,
-            is_repair=v.is_repair,
-            published_at=v.published_at,
-            created_at=v.created_at,
-            total_sessions=session_count,
-            hard_violations=hard_viol,
-        )
-        result.append(out)
-    return result
+    q = db.query(TimetableVersion)
+
+    if current_user.role in ("teacher", "student"):
+        if status_filter and status_filter != "published":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only published timetables are visible to teachers and students.",
+            )
+        q = q.filter(TimetableVersion.status == "published")
+        if current_user.department_id:
+            q = q.filter(TimetableVersion.department_id == current_user.department_id)
+    elif current_user.role == "coordinator":
+        if current_user.department_id:
+            q = q.filter(TimetableVersion.department_id == current_user.department_id)
+        if status_filter:
+            q = q.filter(TimetableVersion.status == status_filter)
+    else:
+        if department_id:
+            q = q.filter(TimetableVersion.department_id == department_id)
+        if status_filter:
+            q = q.filter(TimetableVersion.status == status_filter)
+
+    versions = q.order_by(TimetableVersion.created_at.desc()).limit(limit).all()
+    return [_version_to_out(v, db) for v in versions]
 
 
 # ---------------------------------------------------------------------------
-# Version detail
+# Version detail (Role, Department & Entity Isolated)
 # ---------------------------------------------------------------------------
 
 @router.get("/versions/{version_id}", response_model=TimetableVersionDetail)
-def get_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Get a timetable version with full session and violation detail."""
+def get_version(
+    version_id: uuid.UUID,
+    current_user: UserAccount = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a timetable version with sessions.
+    Enforces:
+    - Teachers & Students cannot view unpublished versions (403 Forbidden).
+    - Non-admins cannot view versions outside their department (403 Forbidden).
+    - Teachers receive ONLY their own teaching sessions (and no internal violations).
+    - Students receive ONLY sessions for their division & its batches (and no internal violations).
+    """
     version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=404, detail="Timetable version not found.")
+
+    assert_department_access(current_user, version.department_id)
+
+    if current_user.role in ("teacher", "student") and version.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: unpublished timetable versions are restricted to administrators and coordinators.",
+        )
 
     db_sessions = (
         db.query(ScheduledSession)
         .filter(ScheduledSession.timetable_version_id == version_id)
         .all()
     )
-    db_violations = (
-        db.query(Violation)
-        .filter(Violation.timetable_version_id == version_id)
-        .all()
-    )
+
+    # Apply entity-level institutional isolation
+    if current_user.role == "teacher":
+        teacher_id_str = _resolve_teacher_id(current_user, db)
+        if teacher_id_str:
+            db_sessions = [s for s in db_sessions if str(s.teacher_id) == teacher_id_str]
+        else:
+            db_sessions = []
+        db_violations = []
+    elif current_user.role == "student":
+        allowed_groups = _resolve_student_allowed_groups(current_user, db)
+        if allowed_groups:
+            db_sessions = [s for s in db_sessions if str(s.target_group_id) in allowed_groups]
+        else:
+            db_sessions = []
+        db_violations = []
+    else:
+        db_violations = (
+            db.query(Violation)
+            .filter(Violation.timetable_version_id == version_id)
+            .all()
+        )
 
     slot_uuid_map = {}
     from backend.app.models.scheduling import TimeSlot
@@ -375,6 +518,12 @@ def get_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
         academic_year_code=version.academic_year_code,
         semester=version.semester,
         is_repair=version.is_repair,
+        submitted_by=version.submitted_by,
+        submitted_at=version.submitted_at,
+        approved_by=version.approved_by,
+        approved_at=version.approved_at,
+        approval_comment=version.approval_comment,
+        published_by=version.published_by,
         published_at=version.published_at,
         created_at=version.created_at,
         total_sessions=len(sessions_out),
@@ -385,46 +534,249 @@ def get_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# Publish version
+# Controlled Approval & Publication Workflow
 # ---------------------------------------------------------------------------
 
-@router.post("/versions/{version_id}/publish", response_model=TimetableVersionOut)
-def publish_version(version_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Publish a timetable version."""
-    from datetime import datetime
+@router.post("/versions/{version_id}/submit", response_model=TimetableVersionOut)
+def submit_version_for_approval(
+    version_id: uuid.UUID,
+    request: Request,
+    payload: Optional[ApprovalActionRequest] = Body(default=None),
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
+    db: Session = Depends(get_db),
+):
+    """
+    Step 1 of controlled publication: Coordinator or Admin submits a validated
+    candidate version for approval. Blocks submission if hard violations exist.
+    """
     version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=404, detail="Timetable version not found.")
 
-    version.status = "published"
-    version.published_at = datetime.utcnow()
+    assert_department_access(current_user, version.department_id)
+
+    if version.status not in ("candidate", "rejected", "draft"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot submit version with status '{version.status}' for approval.",
+        )
+
+    hard_count = _count_hard_violations(version, db)
+    if hard_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot submit timetable for approval: {hard_count} Level A hard violation(s) must be resolved first.",
+        )
+
+    version.status = "pending_approval"
+    version.submitted_by = current_user.id
+    version.submitted_at = datetime.utcnow()
+    if payload and payload.comment:
+        version.approval_comment = payload.comment
+
+    record_audit_event(
+        db=db,
+        action="TIMETABLE_SUBMIT",
+        entity_type="TIMETABLE_VERSION",
+        user_id=current_user.id,
+        entity_id=version.id,
+        payload={
+            "version_number": version.version_number,
+            "label": version.label,
+            "comment": payload.comment if payload else None,
+        },
+        request=request,
+    )
     db.commit()
     db.refresh(version)
+    return _version_to_out(version, db)
 
-    session_count = (
-        db.query(ScheduledSession)
-        .filter(ScheduledSession.timetable_version_id == version.id)
-        .count()
+
+@router.post("/versions/{version_id}/approve", response_model=TimetableVersionOut)
+def approve_version(
+    version_id: uuid.UUID,
+    request: Request,
+    payload: Optional[ApprovalActionRequest] = Body(default=None),
+    current_user: UserAccount = Depends(require_approver),
+    db: Session = Depends(get_db),
+):
+    """
+    Step 2 of controlled publication: Authorized approver (Admin or Coordinator
+    with can_approve_timetable=True) approves a pending candidate version.
+    """
+    version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Timetable version not found.")
+
+    assert_department_access(current_user, version.department_id)
+
+    if version.status != "pending_approval":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Only versions in 'pending_approval' status can be approved (current: '{version.status}').",
+        )
+
+    hard_count = _count_hard_violations(version, db)
+    if hard_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot approve timetable with {hard_count} Level A hard violation(s).",
+        )
+
+    version.status = "approved"
+    version.approved_by = current_user.id
+    version.approved_at = datetime.utcnow()
+    version.approval_comment = payload.comment if payload and payload.comment else None
+
+    record_audit_event(
+        db=db,
+        action="TIMETABLE_APPROVE",
+        entity_type="TIMETABLE_VERSION",
+        user_id=current_user.id,
+        entity_id=version.id,
+        payload={
+            "version_number": version.version_number,
+            "label": version.label,
+            "comment": version.approval_comment,
+        },
+        request=request,
     )
-    hard_viol = (
-        db.query(Violation)
-        .filter(Violation.timetable_version_id == version.id, Violation.rule_level == "A")
-        .count()
+    db.commit()
+    db.refresh(version)
+    return _version_to_out(version, db)
+
+
+@router.post("/versions/{version_id}/reject", response_model=TimetableVersionOut)
+def reject_version(
+    version_id: uuid.UUID,
+    request: Request,
+    payload: Optional[ApprovalActionRequest] = Body(default=None),
+    current_user: UserAccount = Depends(require_approver),
+    db: Session = Depends(get_db),
+):
+    """
+    Reject a pending timetable candidate with an optional reason.
+    Authorized approver only.
+    """
+    version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Timetable version not found.")
+
+    assert_department_access(current_user, version.department_id)
+
+    if version.status != "pending_approval":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Only versions in 'pending_approval' status can be rejected (current: '{version.status}').",
+        )
+
+    version.status = "rejected"
+    version.approved_by = current_user.id
+    version.approved_at = datetime.utcnow()
+    version.approval_comment = payload.comment if payload and payload.comment else "Rejected by approver."
+
+    record_audit_event(
+        db=db,
+        action="TIMETABLE_REJECT",
+        entity_type="TIMETABLE_VERSION",
+        user_id=current_user.id,
+        entity_id=version.id,
+        payload={
+            "version_number": version.version_number,
+            "label": version.label,
+            "reason": version.approval_comment,
+        },
+        request=request,
     )
-    return TimetableVersionOut(
-        id=version.id,
-        department_id=version.department_id,
-        version_number=version.version_number,
-        status=version.status,
-        label=version.label,
-        academic_year_code=version.academic_year_code,
-        semester=version.semester,
-        is_repair=version.is_repair,
-        published_at=version.published_at,
-        created_at=version.created_at,
-        total_sessions=session_count,
-        hard_violations=hard_viol,
+    db.commit()
+    db.refresh(version)
+    return _version_to_out(version, db)
+
+
+@router.post("/versions/{version_id}/publish", response_model=TimetableVersionOut)
+def publish_version(
+    version_id: uuid.UUID,
+    request: Request,
+    current_user: UserAccount = Depends(require_approver),
+    db: Session = Depends(get_db),
+):
+    """
+    Step 3 of controlled publication: Publish an APPROVED timetable version.
+    Enforces:
+    - Authorized approver only (Admin or Coordinator with can_approve_timetable=True).
+    - Version must be in 'approved' status (prevents unapproved or duplicate publication).
+    - Zero Level A hard violations.
+    - Preserves previous published versions by archiving them rather than deleting.
+    - Records publisher, approver, and timestamp in DB and audit log.
+    """
+    version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Timetable version not found.")
+
+    assert_department_access(current_user, version.department_id)
+
+    if version.status == "published":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Timetable version is already published.",
+        )
+
+    if version.status != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Timetable version must be approved before publication "
+                f"(current status: '{version.status}'). Submit for approval and obtain approval first."
+            ),
+        )
+
+    # Hard violation gate (final authoritative check)
+    hard_count = _count_hard_violations(version, db)
+    if hard_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Publication blocked: {hard_count} Level A hard violation(s) detected.",
+        )
+
+    # Archive any currently published versions for the same scope (preserving history)
+    prior_published = (
+        db.query(TimetableVersion)
+        .filter(
+            TimetableVersion.department_id == version.department_id,
+            TimetableVersion.academic_year_code == version.academic_year_code,
+            TimetableVersion.semester == version.semester,
+            TimetableVersion.status == "published",
+            TimetableVersion.id != version.id,
+        )
+        .all()
     )
+    archived_ids = []
+    for old_ver in prior_published:
+        old_ver.status = "archived"
+        archived_ids.append(str(old_ver.id))
+
+    version.status = "published"
+    version.published_at = datetime.utcnow()
+    version.published_by = current_user.id
+
+    record_audit_event(
+        db=db,
+        action="TIMETABLE_PUBLISH",
+        entity_type="TIMETABLE_VERSION",
+        user_id=current_user.id,
+        entity_id=version.id,
+        payload={
+            "version_number": version.version_number,
+            "label": version.label,
+            "approved_by": str(version.approved_by) if version.approved_by else None,
+            "approved_at": version.approved_at.isoformat() if version.approved_at else None,
+            "archived_previous_versions": archived_ids,
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(version)
+    return _version_to_out(version, db)
 
 
 # ---------------------------------------------------------------------------
@@ -436,9 +788,15 @@ def compare_timetable_versions(
     version_a: uuid.UUID = Query(...),
     version_b: uuid.UUID = Query(...),
     include_diffs: bool = Query(default=True),
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
     db: Session = Depends(get_db),
 ):
-    """Compare two timetable versions and return a structured diff."""
+    """Compare two timetable versions and return a structured diff (Admin & Coordinator only)."""
+    for vid in (version_a, version_b):
+        v = db.query(TimetableVersion).filter(TimetableVersion.id == vid).first()
+        if v:
+            assert_department_access(current_user, v.department_id)
+
     comparison = compare_versions(db, str(version_a), str(version_b))
     diffs = []
     if include_diffs:
@@ -469,28 +827,35 @@ def compare_timetable_versions(
 # ---------------------------------------------------------------------------
 
 @router.post("/repair", response_model=GenerationResponse, status_code=status.HTTP_202_ACCEPTED)
-def repair_timetable(request: RepairRequest, db: Session = Depends(get_db)):
+def repair_timetable(
+    payload: RepairRequest,
+    request: Request,
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
+    db: Session = Depends(get_db),
+):
     """
     Localised repair: keep frozen sessions from source_version fixed,
     re-schedule only the specified (or all unfrozen) assignments.
+    Allowed: Admin, Coordinator (own department only).
     """
     source = db.query(TimetableVersion).filter(
-        TimetableVersion.id == request.source_version_id
+        TimetableVersion.id == payload.source_version_id
     ).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source timetable version not found.")
+
+    assert_department_access(current_user, source.department_id)
 
     dept_id = str(source.department_id)
     builder = SchedulingInputBuilder(db)
     scheduling_input = builder.build(dept_id)
 
-    # Load pinned sessions from DB (is_frozen=True, or those NOT in affected_assignment_ids)
     db_sessions = (
         db.query(ScheduledSession)
-        .filter(ScheduledSession.timetable_version_id == request.source_version_id)
+        .filter(ScheduledSession.timetable_version_id == payload.source_version_id)
         .all()
     )
-    affected_ids = {str(x) for x in request.affected_assignment_ids} if request.affected_assignment_ids else None
+    affected_ids = {str(x) for x in payload.affected_assignment_ids} if payload.affected_assignment_ids else None
 
     slot_uuid_map = {}
     from backend.app.models.scheduling import TimeSlot
@@ -517,7 +882,6 @@ def repair_timetable(request: RepairRequest, db: Session = Depends(get_db)):
                 is_frozen=True,
             ))
 
-    # Remove pinned assignments from the input (solver only sees free assignments)
     pinned_aids = {p.assignment_id for p in pinned}
     free_assignments = [a for a in scheduling_input.assignments if a.id not in pinned_aids]
     if not free_assignments:
@@ -529,15 +893,17 @@ def repair_timetable(request: RepairRequest, db: Session = Depends(get_db)):
 
     solver_result = run_solver(
         scheduling_input,
-        time_limit_seconds=request.time_limit_seconds,
+        time_limit_seconds=payload.time_limit_seconds,
         pinned_sessions=pinned,
     )
 
     violations = []
     if solver_result.sessions:
-        # Validate the full repaired timetable (free + pinned)
-        scheduling_input.assignments = builder.build(dept_id).assignments  # restore all
+        scheduling_input.assignments = builder.build(dept_id).assignments
         violations = validate_timetable(solver_result.sessions, scheduling_input)
+
+    hard_count = sum(1 for v in violations if v.level == ViolationLevel.A)
+    soft_count = sum(1 for v in violations if v.level != ViolationLevel.A)
 
     try:
         version = persist_generation_result(
@@ -546,17 +912,29 @@ def repair_timetable(request: RepairRequest, db: Session = Depends(get_db)):
             solver_result=solver_result,
             violations=violations,
             department_id=dept_id,
-            label=request.label,
-            parent_version_id=str(request.source_version_id),
+            label=payload.label,
+            parent_version_id=str(payload.source_version_id),
             is_repair=True,
+        )
+        record_audit_event(
+            db=db,
+            action="TIMETABLE_REPAIR",
+            entity_type="TIMETABLE_VERSION",
+            user_id=current_user.id,
+            entity_id=version.id if version else None,
+            payload={
+                "source_version_id": str(payload.source_version_id),
+                "label": payload.label,
+                "solver_status": solver_result.status.value,
+                "hard_violations": hard_count,
+            },
+            request=request,
         )
         db.commit()
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to persist repair: {exc}")
-
-    hard_count = sum(1 for v in violations if v.level == ViolationLevel.A)
-    soft_count = sum(1 for v in violations if v.level != ViolationLevel.A)
+        logger.error(f"Failed to persist repair: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to persist repair result.")
 
     return GenerationResponse(
         status=solver_result.status.value,
@@ -577,8 +955,12 @@ def repair_timetable(request: RepairRequest, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/runs/{run_id}")
-def get_generation_run(run_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Get generation run metadata and solver diagnostics."""
+def get_generation_run(
+    run_id: uuid.UUID,
+    current_user: UserAccount = Depends(require_roles("admin", "coordinator")),
+    db: Session = Depends(get_db),
+):
+    """Get generation run metadata and solver diagnostics (Admin & Coordinator only)."""
     run = db.query(GenerationRun).filter(GenerationRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Generation run not found.")
@@ -627,4 +1009,3 @@ def _violation_to_out(v) -> ViolationOut:
         affected_entity_ids=v.affected_entity_ids,
         suggestion=getattr(v, "suggestion", None),
     )
-

@@ -40,19 +40,19 @@ def explain_generation(
             version = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
         if run_id:
             run = db.query(GenerationRun).filter(GenerationRun.id == run_id).first()
-        elif version and version.generation_runs:
-            run = version.generation_runs[-1]
+        elif version and version.generation_run:
+            run = version.generation_run
 
         violations = []
         if version:
-            violations_db = db.query(Violation).filter(Violation.version_id == version.id).all()
+            violations_db = db.query(Violation).filter(Violation.timetable_version_id == version.id).all()
             violations = [
                 {
                     "rule_id": v.rule_id,
-                    "level": v.level,
+                    "level": v.rule_level,
                     "severity": v.severity,
                     "description": v.description,
-                    "affected_sessions": v.affected_sessions,
+                    "affected_sessions": v.affected_session_ids,
                 }
                 for v in violations_db
             ]
@@ -63,14 +63,14 @@ def explain_generation(
         data = {
             "version_id": str(version.id) if version else None,
             "label": version.label if version else "Timetable Run",
-            "status": run.status if run else (version.status if version else "COMPLETED"),
-            "solver_time_ms": run.solver_time_ms if run else 0,
-            "objective_value": run.objective_value if run else None,
+            "status": run.solver_status if (run and run.solver_status) else (version.status if version else "COMPLETED"),
+            "solver_time_ms": run.solver_time_ms if (run and run.solver_time_ms) else 0,
+            "objective_value": None,
             "total_sessions": len(version.sessions) if version else 0,
             "hard_violations": hard_count,
             "soft_violations": soft_count,
             "violations": violations,
-            "diagnostic_notes": run.diagnostic_notes if run else "",
+            "diagnostic_notes": run.notes if (run and run.notes) else "",
         }
 
     return provider.explain("generation", data)
@@ -88,14 +88,14 @@ def explain_violations(
     if not version:
         return provider.explain("violations", {"violations": []})
 
-    violations_db = db.query(Violation).filter(Violation.version_id == version.id).all()
+    violations_db = db.query(Violation).filter(Violation.timetable_version_id == version.id).all()
     violations = [
         {
             "rule_id": v.rule_id,
-            "level": v.level,
+            "level": v.rule_level,
             "severity": v.severity,
             "description": v.description,
-            "affected_sessions": v.affected_sessions,
+            "affected_sessions": v.affected_session_ids,
         }
         for v in violations_db
     ]
@@ -132,3 +132,4 @@ def explain_comparison(
     }
 
     return provider.explain("comparison", data)
+

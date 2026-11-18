@@ -9,14 +9,16 @@
 const _studentUser = (() => {
   try {
     const u = JSON.parse(sessionStorage.getItem('eduplus_user') || 'null');
-    if (!u || u.role !== 'student') { window.location.href = 'index.html'; return null; }
+    if (!u) { window.location.href = 'index.html?reason=session_expired'; return null; }
+    if (u.role !== 'student') { window.location.href = 'index.html?reason=unauthorized'; return null; }
     return u;
-  } catch (_) { window.location.href = 'index.html'; return null; }
+  } catch (_) { window.location.href = 'index.html?reason=session_expired'; return null; }
 })();
 if (_studentUser) {
-  document.getElementById('sidebar-username').textContent = _studentUser.name;
+  const sName = _studentUser.full_name || _studentUser.name || _studentUser.email || 'Student';
+  document.getElementById('sidebar-username').textContent = sName;
   document.getElementById('sidebar-avatar').textContent =
-    _studentUser.name.split(' ').map(p => p[0]).join('').slice(0,2).toUpperCase();
+    sName.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
 }
 
 const D = window.EduPlusData;
@@ -103,8 +105,13 @@ function showPanel(name) {
   if (name === 'student-home')      renderStudentHome();
 }
 
-function signOut() {
-  sessionStorage.removeItem('eduplus_user');
+async function signOut() {
+  if (window.EduPlusAPI) {
+    await window.EduPlusAPI.logout();
+  } else {
+    sessionStorage.removeItem('eduplus_user');
+    sessionStorage.removeItem('eduplus_token');
+  }
   window.location.href = 'index.html';
 }
 

@@ -1,7 +1,7 @@
 # EduPlus AI Timetable Maker
 
-> **Version:** 0.5.0 (Phase 5 Complete)  
-> **Status:** Production-ready backend & integrated frontend — Live CP-SAT scheduling, PostgreSQL persistence, versioning & diffing, Natural-Language AI Assistant  
+> **Version:** 0.6.0 (Phase 6 Complete)  
+> **Status:** Role-secured backend & frontend — JWT Authentication, RBAC, Institutional Data Isolation, Approval Workflows, Audit Logging, CP-SAT Scheduling & AI Assistant  
 > **Department:** AIML — Example Engineering College  
 > **Date:** October 2026 – November 2026
 
@@ -11,7 +11,7 @@
 
 EduPlus AI Timetable Maker is an enterprise academic timetable management and constraint optimization platform developed for educational institutions. The system models multi-department, multi-year cohorts with divisions, laboratory batches, teacher availability, room suitability, and elective enrollment groups.
 
-Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a decoupled **independent validator**, a **FastAPI backend** running on dedicated PostgreSQL, an **integrated web interface**, and an **AI Natural-Language Scheduling Assistant**, EduPlus automates the generation, auditing, versioning, comparison, localized repair, and natural-language constraint interpretation for institutional schedules.
+Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a decoupled **independent validator**, a **FastAPI backend** running on dedicated PostgreSQL with **JWT authentication, server-side RBAC, approval workflows, and immutable audit logging**, an **integrated web interface**, and an **AI Natural-Language Scheduling Assistant**, EduPlus automates the generation, auditing, versioning, comparison, localized repair, approval, and natural-language constraint interpretation for institutional schedules.
 
 ---
 
@@ -19,17 +19,18 @@ Equipped with a **Google OR-Tools CP-SAT constraint optimization engine**, a dec
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Login page | ✅ Implemented | Prototype UI + real backend user hashing (pbkdf2-sha256) |
-| Admin dashboard | ✅ Implemented & Integrated | Live CP-SAT generation, validation results, version dropdowns, comparison diffs, localized repair, AI Scheduling Assistant |
-| Teacher dashboard | ✅ Implemented & Integrated | Live timetable view filtered to assigned faculty sessions + local fallback |
-| Student dashboard | ✅ Implemented & Integrated | Live timetable view filtered to division, batch, and elective groups + local fallback |
-| API Service Layer | ✅ Complete | REST client (`src/js/api.js`) connecting frontend to FastAPI backend endpoints |
+| Login & Session Auth | ✅ Implemented | PBKDF2-SHA256 salted password hashing, signed HS256 JWT access tokens, server-side logout revocation, brute-force rate limiting |
+| Admin & Coordinator Dashboard | ✅ Implemented & Integrated | Role-aware navigation, CP-SAT generation, approval workflow (Submit/Approve/Reject/Publish), AI Assistant, User Management & Audit Logs (Admin only) |
+| Teacher Dashboard | ✅ Implemented & Integrated | Published-only timetable filtered strictly to own sessions + live availability/schedule request submission |
+| Student Dashboard | ✅ Implemented & Integrated | Published-only timetable filtered strictly to own division & batches |
+| API Service Layer | ✅ Complete | REST client (`src/js/api.js`) attaching Bearer JWT tokens, handling 401 session expiry, and wrapping all Phase 0–6 endpoints |
 | CSS design system | ✅ Complete | Institutional white background, primary blue highlights, secondary orange accents |
-| PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 26 physical tables via Alembic `5cc27eb93e43` |
-| FastAPI backend | ✅ Implemented | 36 endpoints (Health, Academic CRUD, Generation, Validation, Versioning, Compare, Repair, Runs, AI Assistant) |
+| PostgreSQL schema | ✅ Implemented | PostgreSQL 18 dedicated cluster, 27 physical tables via Alembic `a7f3c91e2b14` |
+| FastAPI backend | ✅ Implemented | 50+ RBAC-protected endpoints (Auth, Users, Audit, Requests, Academic CRUD, Generation, Validation, Approvals, Versioning, Compare, Repair, AI Assistant) |
 | CP-SAT scheduler | ✅ Implemented | Google OR-Tools 9.15 integer programming formulation with hard/soft constraints & dynamic AI injection |
 | Independent validator | ✅ Implemented | Standalone rule engine (Level A hard, Level B policy, Level C soft preferences) |
-| Timetable versioning | ✅ Implemented | Version tracking, session diffing (`/timetable/compare`), audit runs, publish lifecycle |
+| Approval & Publication Workflow | ✅ Implemented | Controlled lifecycle (`candidate` → `pending_approval` → `approved`/`rejected` → `published` → `archived`), hard-violation gate, configurable approver permission |
+| Audit Logging | ✅ Implemented | Immutable security & operational trail with automatic secret/password redaction |
 | Localized repair mode | ✅ Implemented | Pinned session preservation and localized re-optimization (`/timetable/repair`) |
 | AI Assistant & NLP Scheduling | ✅ Implemented | Natural language prompt interpretation, database entity grounding, CP-SAT constraint injection, grounded result & diff explanations (Mock + Gemini) |
 
@@ -204,7 +205,7 @@ EduPlus AI Timetable Maker/
 
 ## Tests
 
-A comprehensive 72-test automated test suite is implemented across:
+A comprehensive 92-test automated test suite is implemented across:
 - **Database & Dialect:** `backend/tests/test_db_connection.py`
 - **Domain Models & Constraints:** `backend/tests/test_models.py`
 - **Institutional Seeding:** `backend/tests/test_seed.py`
@@ -213,20 +214,59 @@ A comprehensive 72-test automated test suite is implemented across:
 - **Validator & CP-SAT Engine:** `backend/tests/test_engine.py` (30 tests: hard/policy/soft rules, capacity, multi-slot practicals, infeasibility, solver timeouts)
 - **Timetable Lifecycle APIs:** `backend/tests/test_timetable_api.py` (21 tests: generation, persistence, versioning, comparison, localized repair, run diagnostics, publish lifecycle)
 - **AI Assistant & NLP Constraints:** `backend/tests/test_ai_assistant.py` (9 tests: NLP interpretation, DB grounding, hard/soft classification, ambiguous entity clarification, unsupported policies, solver constraint injection, grounded explanations)
+- **Authentication, RBAC, Isolation, Approvals & Audit:** `backend/tests/test_auth_rbac.py` (20 tests: login/logout, password hashing, expired/tampered/revoked tokens, brute-force rate limiting, role permissions, IDOR isolation, approval/rejection/publication lifecycle, hard-violation gate, audit log sanitization)
 
 ```bash
 # Run the entire test suite
 python -m pytest backend/tests -v
+
+# Run Phase 6 authentication, RBAC & approval tests only
+python -m pytest backend/tests/test_auth_rbac.py -v
 
 # Run AI assistant tests only
 python -m pytest backend/tests/test_ai_assistant.py -v
 
 # Run engine tests only
 python -m pytest backend/tests/test_engine.py -v
-
-# Run timetable API tests only
-python -m pytest backend/tests/test_timetable_api.py -v
 ```
+
+---
+
+## Phase 6: Authentication, RBAC, Approval Workflows & Security
+
+### Setup & Environment Variables
+Configure the following variables in `backend/.env` before starting the server:
+```env
+DATABASE_URL=postgresql+psycopg2://postgres@127.0.0.1:5433/eduplus_db
+SECRET_KEY=<generate-strong-32+-char-random-secret>
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+LOGIN_RATE_LIMIT_MAX_ATTEMPTS=10
+LOGIN_RATE_LIMIT_WINDOW_SECONDS=60
+ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000,http://127.0.0.1:3000
+```
+
+Run database migrations and idempotent institutional seed:
+```bash
+python -m alembic -c backend/alembic.ini upgrade head
+python -m backend.app.seed.seed_data
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+### Seeded Institutional Accounts (Development / Testing)
+| Role | Email | Password | Capabilities |
+|---|---|---|---|
+| **Admin** | `admin@eduplus.demo` | `admin123` | Institutional config, user/role management, audit logs, timetable approval & publication |
+| **Coordinator** | `coordinator@eduplus.demo` | `coordinator123` | AI constraint interpretation, CP-SAT generation, validation, comparison, repair, submit for approval (approval/publish configurable via `can_approve_timetable`) |
+| **Teacher** | `teacher@eduplus.demo` | `teacher123` | View own published timetable sessions only, submit & track own availability/schedule requests |
+| **Student** | `student@eduplus.demo` | `student123` | View own division & batch published timetable sessions only |
+
+### Key Auth, Approval & Security Endpoints
+- `POST /api/v1/auth/login` — Authenticate and receive HS256 Bearer JWT access token (rate-limited).
+- `POST /api/v1/auth/logout` — Immediately revoke active token JTI server-side.
+- `GET /api/v1/auth/me` / `POST /api/v1/auth/change-password` — Session profile and password rotation.
+- `GET/POST/PUT /api/v1/users` & `GET /api/v1/audit-logs` — Admin-only user management and immutable audit log access.
+- `POST /api/v1/timetable/versions/{id}/submit` → `/approve` or `/reject` → `/publish` — Controlled publication lifecycle with Level A hard-violation blocking and prior-version archiving.
+- `POST/GET /api/v1/requests` & `POST /api/v1/requests/{id}/review` — Faculty availability and schedule change requests.
 
 ---
 

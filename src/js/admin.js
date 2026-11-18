@@ -6,25 +6,40 @@
 (function () {
   "use strict";
 
-  // ─── AUTH GUARD ─────────────────────────────────────────────────────────────
+  // ─── AUTH GUARD (ADMIN & COORDINATOR ROLE-AWARE) ────────────────────────────
   const _adminUser = (() => {
     try {
       const u = JSON.parse(sessionStorage.getItem('eduplus_user') || 'null');
-      if (!u || u.role !== 'admin') { window.location.href = 'index.html'; return null; }
+      if (!u) { window.location.href = 'index.html?reason=session_expired'; return null; }
+      if (u.role !== 'admin' && u.role !== 'coordinator') {
+        window.location.href = 'index.html?reason=unauthorized';
+        return null;
+      }
       return u;
-    } catch (_) { window.location.href = 'index.html'; return null; }
+    } catch (_) { window.location.href = 'index.html?reason=session_expired'; return null; }
   })();
+  const _isAdmin = _adminUser?.role === 'admin';
+  const _canApprove = _isAdmin || Boolean(_adminUser?.can_approve_timetable);
+
   if (_adminUser) {
+    const displayName = _adminUser.full_name || _adminUser.name || _adminUser.email || 'User';
     const usernameEl = document.getElementById('sidebar-username');
     const avatarEl = document.getElementById('sidebar-avatar');
-    if (usernameEl) usernameEl.textContent = _adminUser.name;
+    const roleEl = document.getElementById('sidebar-role-label');
+    if (usernameEl) usernameEl.textContent = displayName;
+    if (roleEl) roleEl.textContent = _isAdmin ? 'Administrator' : 'Timetable Coordinator';
     if (avatarEl) {
-      avatarEl.textContent = _adminUser.name
+      avatarEl.textContent = displayName
         .split(' ')
         .map(p => p[0])
         .join('')
         .slice(0, 2)
         .toUpperCase();
+    }
+    // Hide admin-only navigation section for coordinators (backend still enforces 403)
+    const adminNav = document.getElementById('nav-admin-section');
+    if (adminNav && !_isAdmin) {
+      adminNav.style.display = 'none';
     }
   }
 
@@ -84,9 +99,16 @@
     teachers: 'Teachers',
     rooms: 'Rooms & Labs',
     requests: 'Request Inbox',
+    users: 'Users & Roles',
+    audit: 'Audit Logs',
   };
 
   function showPanel(name) {
+    if ((name === 'users' || name === 'audit') && !_isAdmin) {
+      showToast('Access denied: Administrator privileges required.', 'error');
+      return;
+    }
+
     document.querySelectorAll('.panel').forEach(p => {
       p.classList.add('hidden');
       p.classList.remove('active');
@@ -112,11 +134,18 @@
     if (name === 'rooms') renderRooms();
     if (name === 'requests') renderRequests();
     if (name === 'generate') renderGeneratePanel();
+    if (name === 'users') loadAdminUsers();
+    if (name === 'audit') loadAuditLogs();
   }
 
-  // ─── SIGN OUT ───────────────────────────────────────────────────────────────
-  function signOut() {
-    sessionStorage.removeItem('eduplus_user');
+  // ─── SIGN OUT (SERVER-SIDE TOKEN REVOCATION) ────────────────────────────────
+  async function signOut() {
+    if (window.EduPlusAPI) {
+      await window.EduPlusAPI.logout();
+    } else {
+      sessionStorage.removeItem('eduplus_user');
+      sessionStorage.removeItem('eduplus_token');
+    }
     window.location.href = 'index.html';
   }
 
@@ -584,6 +613,7 @@
   function renderGeneratePanel() {
     renderCandidateList();
     renderValidationResultView();
+    updateApprovalControls();
   }
 
   function renderCandidateList() {
@@ -1488,6 +1518,222 @@
     }
   }
 
+  // ─── PHASE 6: APPROVAL WORKFLOW, USERS & AUDIT LOGS ─────────────────────────
+  function updateApprovalControls() {
+    const stageBadge = document.getElementById('approval-stage-badge');
+    const metaInfo = document.getElementById('approval-meta-info');
+    const btnSubmit = document.getElementById('btn-submit-approval');
+    const btnApprove = document.getElementById('btn-approve-version');
+    const btnReject = document.getElementById('btn-reject-version');
+    const btnPublish = document.getElementById('btn-publish');
+
+    if (!_activeVersion) {
+      if (stageBadge) stageBadge.textContent = 'No version selected';
+      if (btnSubmit) btnSubmit.disabled = true;
+      if (btnApprove) btnApprove.disabled = true;
+      if (btnReject) btnReject.disabled = true;
+      if (btnPublish) btnPublish.disabled = true;
+      return;
+    }
+
+    const st = _activeVersion.status || 'draft';
+    const hardViol = _activeVersion.hard_violations || 0;
+
+    if (stageBadge) {
+      const labelMap = {
+        draft: 'Draft',
+        candidate: 'Candidate',
+        pending_approval: 'Pending Approval',
+        approved: 'Approved',
+        rejected: 'Rejected',
+        published: 'Published',
+        archived: 'Archived',
+      };
+      stageBadge.textContent = labelMap[st] || st;
+      stageBadge.className = `badge ${
+        st === 'published' || st === 'approved' ? 'badge-success' :
+        st === 'pending_approval' ? 'badge-orange' :
+        st === 'rejected' ? 'badge-error' : 'badge-brand'
+      }`;
+    }
+
+    if (metaInfo) {
+      let info = `Version v${_activeVersion.version_number} &bull; Status: <strong>${st.replace('_', ' ')}</strong>`;
+      if (_activeVersion.approval_comment) {
+        info += `<div style="margin-top:4px; color: var(--gray-700);">Review note: <em>${_activeVersion.approval_comment}</em></div>`;
+      }
+      metaInfo.innerHTML = info;
+    }
+
+    if (btnSubmit) {
+      btnSubmit.disabled = !(hardViol === 0 && (st === 'candidate' || st === 'rejected' || st === 'draft'));
+    }
+    if (btnApprove) {
+      btnApprove.style.display = _canApprove ? '' : 'none';
+      btnApprove.disabled = !(_canApprove && hardViol === 0 && st === 'pending_approval');
+    }
+    if (btnReject) {
+      btnReject.style.display = _canApprove ? '' : 'none';
+      btnReject.disabled = !(_canApprove && st === 'pending_approval');
+    }
+    if (btnPublish) {
+      btnPublish.disabled = !(_canApprove && hardViol === 0 && st === 'approved');
+      btnPublish.title = !_canApprove
+        ? 'Requires Approver or Admin permission'
+        : st !== 'approved'
+        ? 'Version must be submitted and approved before publication'
+        : '';
+    }
+  }
+
+  async function submitCurrentForApproval() {
+    if (!_isBackendLive || !_activeVersion) return;
+    const comment = document.getElementById('approval-comment-input')?.value?.trim() || null;
+    try {
+      const updated = await window.EduPlusAPI.submitVersionForApproval(_activeVersion.id, comment);
+      showToast(`Version v${updated.version_number} submitted for approval.`, 'success');
+      await loadTimetableVersions();
+      await selectActiveVersion(_activeVersion.id);
+    } catch (err) {
+      showToast(`Submission failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function approveCurrentCandidate() {
+    if (!_isBackendLive || !_activeVersion) return;
+    const comment = document.getElementById('approval-comment-input')?.value?.trim() || null;
+    try {
+      const updated = await window.EduPlusAPI.approveVersion(_activeVersion.id, comment);
+      showToast(`Version v${updated.version_number} approved! Ready for publication.`, 'success');
+      await loadTimetableVersions();
+      await selectActiveVersion(_activeVersion.id);
+    } catch (err) {
+      showToast(`Approval failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function rejectCurrentCandidate() {
+    if (!_isBackendLive || !_activeVersion) return;
+    const comment = document.getElementById('approval-comment-input')?.value?.trim() || 'Needs revision';
+    try {
+      const updated = await window.EduPlusAPI.rejectVersion(_activeVersion.id, comment);
+      showToast(`Version v${updated.version_number} rejected.`, 'warning');
+      await loadTimetableVersions();
+      await selectActiveVersion(_activeVersion.id);
+    } catch (err) {
+      showToast(`Rejection failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function loadAdminUsers() {
+    const tbody = document.getElementById('users-table-body');
+    if (!tbody || !_isAdmin) return;
+    if (!_isBackendLive) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">Backend offline — user management requires live API.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted">Loading users…</td></tr>';
+    try {
+      const res = await window.EduPlusAPI.getUsers(1, 50);
+      const items = res.items || [];
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No users found.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.map(u => {
+        const isSelf = _adminUser && u.id === _adminUser.id;
+        return `
+          <tr>
+            <td><strong>${u.full_name || '—'}</strong><div class="text-xs text-muted">${u.email}</div></td>
+            <td><span class="badge ${u.role === 'admin' ? 'badge-orange' : u.role === 'coordinator' ? 'badge-brand' : 'badge-neutral'}">${u.role}</span></td>
+            <td>${u.can_approve_timetable ? '<span class="badge badge-success">Can Approve</span>' : '<span class="text-xs text-muted">Standard</span>'}</td>
+            <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-error'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+            <td style="display:flex; gap:6px;">
+              ${u.role === 'coordinator' ? `<button class="btn btn-secondary btn-sm" onclick="toggleUserApproval('${u.id}', ${!u.can_approve_timetable})">${u.can_approve_timetable ? 'Revoke Approver' : 'Grant Approver'}</button>` : ''}
+              ${!isSelf ? `<button class="btn btn-secondary btn-sm" onclick="toggleUserActive('${u.id}', ${!u.is_active})">${u.is_active ? 'Deactivate' : 'Activate'}</button>` : '<span class="text-xs text-muted">Current user</span>'}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-error">Error loading users: ${err.message}</td></tr>`;
+    }
+  }
+
+  async function handleCreateUser(event) {
+    event.preventDefault();
+    if (!_isAdmin || !_isBackendLive) return;
+    const payload = {
+      full_name: document.getElementById('new-user-name')?.value?.trim(),
+      email: document.getElementById('new-user-email')?.value?.trim(),
+      password: document.getElementById('new-user-password')?.value,
+      role: document.getElementById('new-user-role')?.value,
+      can_approve_timetable: document.getElementById('new-user-can-approve')?.checked || false,
+      department_id: _departments[0]?.id || _adminUser?.department_id || null,
+    };
+    try {
+      await window.EduPlusAPI.createUser(payload);
+      showToast(`User ${payload.email} created successfully.`, 'success');
+      document.getElementById('create-user-form')?.reset();
+      await loadAdminUsers();
+    } catch (err) {
+      showToast(`Create user failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function toggleUserApproval(userId, allow) {
+    try {
+      await window.EduPlusAPI.updateUser(userId, { can_approve_timetable: allow });
+      showToast(`Approval permission ${allow ? 'granted' : 'revoked'}.`, 'success');
+      await loadAdminUsers();
+    } catch (err) {
+      showToast(`Update failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function toggleUserActive(userId, active) {
+    try {
+      await window.EduPlusAPI.updateUser(userId, { is_active: active });
+      showToast(`User account ${active ? 'activated' : 'deactivated'}.`, 'success');
+      await loadAdminUsers();
+    } catch (err) {
+      showToast(`Update failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function loadAuditLogs() {
+    const tbody = document.getElementById('audit-table-body');
+    if (!tbody || !_isAdmin) return;
+    if (!_isBackendLive) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">Backend offline — audit logs require live API.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted">Loading audit logs…</td></tr>';
+    try {
+      const res = await window.EduPlusAPI.getAuditLogs(1, 50);
+      const items = res.items || [];
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No audit events recorded yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.map(log => {
+        const ts = new Date(log.created_at).toISOString().replace('T', ' ').slice(0, 19);
+        const detailStr = log.payload ? JSON.stringify(log.payload).slice(0, 90) : '—';
+        return `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${ts}</td>
+            <td>${log.actor_email || '<span class="text-muted">Anonymous</span>'}</td>
+            <td><span class="badge badge-brand">${log.action}</span></td>
+            <td><span class="text-xs">${log.entity_type}</span></td>
+            <td style="font-size: 11px; color: var(--gray-600);">${detailStr}</td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-error">Error loading audit logs: ${err.message}</td></tr>`;
+    }
+  }
+
   // ─── INIT EXECUTION ─────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initOverview();
@@ -1535,4 +1781,14 @@
   window.explainActiveCandidate = explainActiveCandidate;
   window.runVersionComparisonWithAI = runVersionComparisonWithAI;
   window.checkAIStatus = checkAIStatus;
+
+  // Phase 6 Approval, Users & Audit bindings
+  window.submitCurrentForApproval = submitCurrentForApproval;
+  window.approveCurrentCandidate = approveCurrentCandidate;
+  window.rejectCurrentCandidate = rejectCurrentCandidate;
+  window.loadAdminUsers = loadAdminUsers;
+  window.handleCreateUser = handleCreateUser;
+  window.toggleUserApproval = toggleUserApproval;
+  window.toggleUserActive = toggleUserActive;
+  window.loadAuditLogs = loadAuditLogs;
 })();

@@ -39,6 +39,7 @@ from backend.app.models.timetable import (
 from backend.app.models.security import (
     UserAccount,
     AuditLog,
+    TeacherRequest,
 )
 
 __all__ = [
@@ -67,5 +68,6 @@ __all__ = [
     "SessionException",
     "UserAccount",
     "AuditLog",
+    "TeacherRequest",
 ]
 

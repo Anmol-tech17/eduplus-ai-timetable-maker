@@ -19,6 +19,10 @@ class Settings:
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     API_V1_PREFIX: str = os.getenv("API_V1_PREFIX", "/api/v1")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "eduplus-dev-secret-key-for-local-testing-only-32chars")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = int(os.getenv("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "10"))
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
     
     # Database
     DATABASE_URL: str = os.getenv(
@@ -30,14 +34,14 @@ class Settings:
         "postgresql+psycopg2://postgres@127.0.0.1:5433/eduplus_test_db"
     )
     
-    # CORS
+    # CORS (explicit origins — never combine wildcard '*' with allow_credentials=True)
     ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "null",  # for local file:// testing
-        "*"
+        origin.strip()
+        for origin in os.getenv(
+            "ALLOWED_ORIGINS",
+            "http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5500,http://127.0.0.1:5500,null"
+        ).split(",")
+        if origin.strip()
     ]
     
     # Server

@@ -50,17 +50,25 @@ class TimetableVersion(Base):
     parent_version_id = Column(Uuid, ForeignKey("timetable_versions.id", ondelete="SET NULL"), nullable=True, index=True)
     department_id = Column(Uuid, ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False, index=True)
     version_number = Column(Integer, nullable=False, default=1)
-    status = Column(String(32), nullable=False, default="draft")  # 'draft', 'candidate', 'published', 'archived'
+    status = Column(String(32), nullable=False, default="draft")  # 'draft', 'candidate', 'pending_approval', 'approved', 'rejected', 'published', 'archived'
     label = Column(String(128), nullable=False)  # e.g., 'AY2026-27 Sem 1 - v1.0 Final'
     academic_year_code = Column(String(32), nullable=False, default="2026-27")
     semester = Column(SmallInteger, nullable=False, default=1)
     is_repair = Column(Boolean, nullable=False, default=False)
+    submitted_by = Column(Uuid, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+    approved_by = Column(Uuid, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    approval_comment = Column(Text, nullable=True)
     published_at = Column(DateTime, nullable=True)
     published_by = Column(Uuid, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
-        CheckConstraint("status IN ('draft', 'candidate', 'published', 'archived')", name="chk_tt_status"),
+        CheckConstraint(
+            "status IN ('draft', 'candidate', 'pending_approval', 'approved', 'rejected', 'published', 'archived')",
+            name="chk_tt_status",
+        ),
         Index("idx_tt_dept_status", "department_id", "status"),
     )
 
